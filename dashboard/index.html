@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Karpathy LLM dashboard</title>
+<title>Memex</title>
+<link rel="icon" type="image/svg+xml" href="claude_character.svg">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 :root{
@@ -75,8 +76,9 @@ button:active{transform:scale(0.97);}
 /* ── Header ── */
 header{flex-shrink:0;height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 18px;gap:12px;backdrop-filter:blur(8px);position:relative;z-index:30}
 header h1{font-size:14px;font-weight:700;white-space:nowrap;letter-spacing:-0.01em;display:flex;align-items:center;gap:8px}
-header h1 .logo-mark{width:18px;height:18px;border:1.5px solid var(--text);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;transform:rotate(45deg)}
-header h1 .logo-mark span{transform:rotate(-45deg);color:var(--text)}
+header h1 .logo-mark{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text)}
+header h1 .logo-mark svg{width:100%;height:100%;display:block}
+header h1 .logo-mark .eye{fill:var(--bg2)}
 .h-side-toggle{background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--muted);padding:4px 8px;font-size:11px;font-family:var(--mono)}
 .h-side-toggle:hover{color:var(--text);border-color:var(--border2)}
 .h-model-select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:4px 10px;font-size:11px;color:var(--text);cursor:pointer;transition:border-color var(--d-fast)}
@@ -465,7 +467,7 @@ main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 <div class="app" id="app">
   <header>
     <button class="h-side-toggle" onclick="toggleSidebar()" title="Toggle sidebar (Cmd/Ctrl+B)" aria-label="Toggle sidebar">⟷</button>
-    <h1><span class="logo-mark"><span>◆</span></span> Karpathy LLM dashboard</h1>
+    <h1><span class="logo-mark" aria-label="Memex"><svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="currentColor"><rect x="70" y="40" width="20" height="40"/><rect x="150" y="40" width="20" height="40"/><rect x="60" y="80" width="120" height="10"/><rect x="50" y="90" width="140" height="60"/><rect x="30" y="110" width="20" height="20"/><rect x="190" y="110" width="20" height="20"/><rect x="70" y="150" width="30" height="40"/><rect x="140" y="150" width="30" height="40"/></g><rect class="eye" x="80" y="110" width="20" height="20"/><rect class="eye" x="140" y="110" width="20" height="20"/></svg></span> Memex</h1>
     <div class="h-proj-group">
       <select class="h-project-select" id="projectSelect" onchange="onProjectChange()" title="Project (Cmd/Ctrl+P)"></select>
       <button class="h-icon-btn" onclick="openNewProjectModal()" title="New project" aria-label="New project">+</button>
@@ -1337,7 +1339,18 @@ async function registerObsidianVault(ev){
       var msg=d.action==='already_registered'
         ?(LANG==='ko'?'이미 등록되어 있음 — open 플래그 활성화':'Already registered — opened')
         :(LANG==='ko'?'등록 완료! Obsidian 재시작하면 vault 목록에 나타납니다.':'Registered! Restart Obsidian to see it.');
-      toast(msg+' ('+d.config_path+')','ok');
+      var scaf=d.scaffolding||{};
+      var addedCount=(scaf.created||[]).length+(scaf.updated||[]).length;
+      var scafMsg='';
+      if(addedCount>0){
+        var parts=[];
+        if((scaf.created||[]).length)parts.push((LANG==='ko'?'생성: ':'created: ')+scaf.created.join(', '));
+        if((scaf.updated||[]).length)parts.push((LANG==='ko'?'갱신: ':'updated: ')+scaf.updated.join(', '));
+        scafMsg=' · '+(LANG==='ko'?'LLM Wiki 자동 세팅 ':'LLM Wiki auto-setup ')+'['+parts.join(' | ')+']';
+      }else{
+        scafMsg=' · '+(LANG==='ko'?'LLM Wiki 스키마 OK':'LLM Wiki schema OK');
+      }
+      toast(msg+' ('+d.config_path+')'+scafMsg,'ok');
       setTimeout(checkStatus,500);
     }else{
       // 서버 에러 발생 시 자세한 정보 표시
@@ -2313,10 +2326,10 @@ function buildGuide(lang){
   var FENCE=BT+BT+BT;
   if(lang==='ko'){
     return [
-      '# Karpathy LLM 대시보드','',
+      '# Memex','',
       '> 스스로 쓰이는 개인 지식 베이스.',
       '> Obsidian에서 읽고, Claude Code가 쓰고, 대시보드로 제어합니다.','',
-      '원본: [Karpathy LLM Wiki 패턴](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)','',
+      '패턴 출처: [Karpathy의 LLM Wiki 패턴](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) · 이름 출처: [Vannevar Bush의 Memex (1945)](https://en.wikipedia.org/wiki/Memex)','',
       '---','',
       '## 먼저 알아둘 것','',
       '- `raw/` 는 **불변**입니다. 원본 소스만 들어가고, 4단계 보호로 Claude도 수정할 수 없습니다.',
@@ -2404,10 +2417,10 @@ function buildGuide(lang){
     ].join('\n');
   }
   return [
-    '# Karpathy LLM Dashboard','',
+    '# Memex','',
     '> A personal knowledge base that writes itself.',
     '> Read in Obsidian, written by Claude Code, controlled from this dashboard.','',
-    'Source: [Karpathy LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)','',
+    'Pattern: [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) · Named after [Vannevar Bush\'s Memex (1945)](https://en.wikipedia.org/wiki/Memex)','',
     '---','',
     '## A few things to know first','',
     '- `raw/` is **immutable**. Only original sources live here. Even Claude cannot modify it (4-layer protection).',
