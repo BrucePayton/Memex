@@ -98,6 +98,32 @@ python dashboard/server.py    # Python 3.10+, pip 의존성 0
 
 ---
 
+## Memex를 Claude에 직접 연결 (MCP)
+
+대시보드를 띄우지 않아도 된다. Memex를 Model Context Protocol 서버로 띄워
+Claude Code, Claude Desktop, 또는 다른 MCP 클라이언트가 위키를 **직접** 읽고
+검색하고 갱신하도록 만들 수 있다. 14개 도구를 노출:
+`list_projects`, `list_pages`, `read_page`, `search`, `folder_tree`, `stats`,
+`recent_log`, `list_raw_sources`, `get_instructions`, `add_raw_source`,
+`create_page`, `update_page`, `create_folder`, `git_commit`.
+
+```bash
+bash mcp-server/install.sh                # 1회: venv 생성 + `mcp` 설치
+claude mcp add --scope user memex \       # Claude Code에 등록
+  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
+claude mcp list                           # 확인
+```
+
+Claude Desktop의 경우 `install.sh`가 출력하는 JSON 스니펫을
+`claude_desktop_config.json`에 붙여넣고 재시작.
+
+MCP 서버는 대시보드와 같은 `projects.json`·`wiki/` 트리를 공유한다 —
+양쪽이 즉시 동기화. `raw/`는 그대로 불변(immutable)이며 `add_raw_source`는
+덮어쓰기를 거부한다. 자세한 내용은
+[`mcp-server/README.md`](mcp-server/README.md).
+
+---
+
 ## 제공 기능
 
 <table>
@@ -219,7 +245,12 @@ python dashboard/server.py    # Python 3.10+, pip 의존성 0
 
 ## CLI 사용
 
-대시보드의 모든 기능은 터미널에서도 작동합니다:
+세 가지 인터페이스, 하나의 위키 — 상황에 맞게 골라 쓰기.
+
+**1. 대시보드** — 시각적 그래프 + 폼 기반 수집, `http://localhost:8090`.
+
+**2. 이 레포 안의 Claude Code** — 대시보드는 내부적으로 `claude -p`를 호출하므로
+같은 프롬프트가 터미널에서도 그대로 동작:
 
 ```bash
 claude
@@ -229,7 +260,11 @@ claude
 "Reflect on the last 10 ingests"
 ```
 
-대시보드는 내부적으로 `claude -p`를 호출합니다. 양쪽은 같은 상태를 공유.
+**3. 어디서든 MCP로** — `mcp-server/install.sh`로 등록하면 Claude Code 세션
+(이 레포 밖에서도)과 Claude Desktop이 14개 Memex 도구를 직접 호출 가능.
+위쪽 [MCP 섹션](#memex를-claude에-직접-연결-mcp) 참조.
+
+세 인터페이스 모두 `projects.json`과 `wiki/` 트리를 공유 — 변경사항은 즉시 반영됨.
 
 ---
 

@@ -98,6 +98,31 @@ Open `http://localhost:8090`. Done.
 
 ---
 
+## Connect Memex to Claude (MCP)
+
+Skip the dashboard and let Claude (Code, Desktop, or any MCP client) read,
+search, and maintain the wiki **directly** as a Model Context Protocol server.
+14 tools are exposed: `list_projects`, `list_pages`, `read_page`, `search`,
+`folder_tree`, `stats`, `recent_log`, `list_raw_sources`, `get_instructions`,
+`add_raw_source`, `create_page`, `update_page`, `create_folder`, `git_commit`.
+
+```bash
+bash mcp-server/install.sh                # one-time: creates a venv and installs `mcp`
+claude mcp add --scope user memex \       # register with Claude Code
+  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
+claude mcp list                           # verify
+```
+
+For Claude Desktop, paste the JSON snippet `install.sh` prints into
+`claude_desktop_config.json` and restart.
+
+The MCP server reuses the same `projects.json` and `wiki/` tree as the
+dashboard — both surfaces stay in sync. `raw/` remains immutable; the
+`add_raw_source` tool refuses to overwrite. Full details in
+[`mcp-server/README.md`](mcp-server/README.md).
+
+---
+
 ## What you get
 
 <table>
@@ -219,7 +244,12 @@ Every ingest is revertable. Every claim has a citation. Every contradiction gets
 
 ## CLI usage
 
-Everything in the dashboard works from the terminal:
+Three surfaces, one wiki — pick whichever fits the moment.
+
+**1. Dashboard** — visual graph + form-driven ingest at `http://localhost:8090`.
+
+**2. Claude Code in this repo** — the dashboard shells out to `claude -p`,
+so the same prompts work from a terminal here:
 
 ```bash
 claude
@@ -229,7 +259,13 @@ claude
 "Reflect on the last 10 ingests"
 ```
 
-The dashboard shells out to `claude -p` underneath. Use whichever you prefer; they share the same state.
+**3. MCP from anywhere** — once `mcp-server/install.sh` is registered,
+any Claude Code session (in or out of this repo) and Claude Desktop can
+call the 14 Memex tools directly. See the [MCP section](#connect-memex-to-claude-mcp)
+above.
+
+All three share `projects.json` and the `wiki/` tree — changes are
+immediately visible across surfaces.
 
 ---
 
