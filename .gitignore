@@ -15,5 +15,9 @@ query-log.jsonl
 __pycache__/
 *.pyc
 
+# MCP server local venv
+mcp-server/.venv/
+mcp-server/__pycache__/
+
 # Claude Code
 .claude/
