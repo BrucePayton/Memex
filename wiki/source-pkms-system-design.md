@@ -14,20 +14,6 @@ sources:
   - pkms-system-design
 ---
 
----
-title: "Personal Knowledge Management System Design"
-type: source-summary
-tags:
-  - pkms
-  - architecture
-  - engine
-created: 2026-04-27
-last_updated: 2026-04-27
-source_count: 0
-confidence: medium
-status: active
----
-
 # Personal Knowledge Management System Design
 
 Overview of how to build a PKM engine from scratch, covering storage, ingestion, graph topology, query, link resolution, rendering, and sync strategies.
@@ -50,5 +36,4 @@ A PKM rests on four activities forming a cycle: **Capture → Organize → Conne
 
 A starter skeleton: Markdown files in a `vault/` directory with five source files — `parser.ts`, `graph.ts`, `search.ts`, `server.ts`, `renderer.ts` — exposed via a small HTTP API (GET notes, backlinks, graph, search; POST notes).
 
-[^src-pkms-system-design]: [[pkms-system-design]]
-
+[^src-pkms-system-design]: [[source-pkms-system-design]]
