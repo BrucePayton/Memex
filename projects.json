@@ -1,5 +1,15 @@
 {
   "version": 1,
-  "active": null,
-  "projects": []
+  "active": "中国企业会计准则",
+  "projects": [
+    {
+      "slug": "中国企业会计准则",
+      "title": "中国企业会计准则",
+      "description": "专门用来跟踪中国国内会计准则",
+      "model": "default",
+      "created": "2026-04-27",
+      "last_used": "2026-04-27",
+      "template": "llm-research"
+    }
+  ]
 }
