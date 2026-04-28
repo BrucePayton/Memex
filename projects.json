@@ -1,11 +1,20 @@
 {
   "version": 1,
-  "active": "中国企业会计准则",
+  "active": "资金管理账户业务办理",
   "projects": [
     {
       "slug": "中国企业会计准则",
       "title": "中国企业会计准则",
       "description": "专门用来跟踪中国国内会计准则",
+      "model": "default",
+      "created": "2026-04-28",
+      "last_used": "2026-04-28",
+      "template": "llm-research"
+    },
+    {
+      "slug": "资金管理账户业务办理",
+      "title": "资金管理账户业务办理",
+      "description": "专门用来维护资金的账户业务办理手册知识",
       "model": "default",
       "created": "2026-04-28",
       "last_used": "2026-04-28",
