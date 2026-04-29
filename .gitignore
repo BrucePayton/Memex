@@ -21,6 +21,9 @@ __pycache__/
 mcp-server/.venv/
 mcp-server/__pycache__/
 
+# docs capture local venv (Pillow fallback for demo.gif when ffmpeg is unavailable)
+docs/.venv/
+
 # Claude Code
 .claude/
 
@@ -28,5 +31,7 @@ mcp-server/__pycache__/
 .cursor/
 
 
-# projects
-**/projects
+# projects — only ignore trash/obsidian/cache, not the whole tree
+projects/.trash/
+projects/**/.obsidian/
+projects/**/__pycache__/
