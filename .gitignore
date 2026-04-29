@@ -26,3 +26,7 @@ mcp-server/__pycache__/
 
 # Cursor
 .cursor/
+
+
+# projects
+**/projects
