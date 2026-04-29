@@ -6,6 +6,8 @@ Thumbs.db
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/
+.obsidian/graph.json
+
 .trash/
 
 # Build artifacts
@@ -21,3 +23,6 @@ mcp-server/__pycache__/
 
 # Claude Code
 .claude/
+
+# Cursor
+.cursor/

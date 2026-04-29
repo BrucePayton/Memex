@@ -286,6 +286,31 @@ dashboard — both surfaces stay in sync. `raw/` remains immutable; the
 
 <sub><em>Want your own screenshots? Run <code>docs/capture.sh</code> while the server is up.</em></sub>
 
+### AI provider & CLI settings
+
+Open **More → AI & CLI settings** in the dashboard (`http://localhost:8090`).
+
+**HTTP (OpenAI-compatible)** — Memex calls `POST {base}/chat/completions` with Bearer auth. Any vendor that exposes this shape works (OpenAI, DeepSeek, DashScope compatible-mode, Gemini OpenAI-compat endpoint, etc.). The UI offers **presets** that only pre-fill base URL and a suggested model; you still supply the API key. Keys are stored **only** in [`.dashboard-settings.json`](.dashboard-settings.json) on the server and are **not** sent to the browser after save. Optional **temperature** and **max tokens** apply to HTTP completions.
+
+**Query (HTTP vs CLI)** — With **Claude CLI**, Query uses tools to read wiki files. With **HTTP**, Memex retrieves **TF-IDF excerpts** from `wiki/` plus a truncated `wiki/index.md` server-side before calling the chat API (`files_read` reflects injected paths). When the HTTP provider is active, the header **model** dropdown updates **`openai_model`** (preset vendor models), not only the CLI model field.
+
+**Claude CLI** — Ingest, Lint, and other tool-using flows run the configured executable (default `claude`). Set **`claude_cli_binary`** to your CLI name or an **absolute path**.
+
+**Why a terminal alias like `claude-qwen` can fail in the dashboard** — The Python server does **not** load `~/.bash_aliases` or `source ~/.claude-qwen-env`. Shell aliases are invisible to `subprocess`. Fixes:
+
+1. **`cli_path_extra`** — One directory per line, prepended to `PATH` for Memex subprocesses only (e.g. Homebrew or npm global `bin` when the IDE-launched server has a minimal PATH).
+2. **Wrapper script** — Put a real file on disk (e.g. `~/bin/claude-qwen-memex`, `chmod +x`) that sources your env file and `exec`s the real CLI; set **`claude_cli_binary`** to that script’s **absolute path**. **`~` in `claude_cli_binary` is expanded** to your home directory.
+3. **Test CLI** — Uses the same resolution as ingest; **`/api/claude/diagnose`** also reports `resolved_executable` and PATH preview.
+
+**Vendor env files (`~/.claude-qwen-env`, `~/.claude-deepseek-env`, `~/.claude-kimi-env`)** — If each file `export`s gateway variables (e.g. `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`), use the bundled wrappers:
+
+```bash
+chmod +x scripts/install-memex-cli-wrappers.sh   # once
+./scripts/install-memex-cli-wrappers.sh        # installs into ~/bin by default
+```
+
+This creates **`memex-claude-qwen`**, **`memex-claude-deepseek`**, **`memex-claude-kimi`** (symlinks to **`memex-claude-vendor`**). In Memex, set **`claude_cli_binary`** to one of those names **and** add **`~/bin`** (or the printed absolute directory) to **Extra PATH** if needed. Optional: set **`MEMEX_CLAUDE_BIN`** inside `~/.profile` or only for the Memex process if `claude` is not on PATH; set **`MEMEX_VENDOR_SKIP_PERMISSIONS=0`** to omit `--dangerously-skip-permissions`.
+
 ---
 
 ## How knowledge accumulates

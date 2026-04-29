@@ -7,7 +7,7 @@ LLM Wiki Dashboard Server
 - 의존성 없음 (Python 3.10+ stdlib only)
 """
 
-import json, os, re, shutil, subprocess, sys, time, threading, urllib.parse
+import json, os, re, shutil, ssl, subprocess, sys, time, threading, urllib.error, urllib.parse, urllib.request
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from provenance import build_provenance_graph
@@ -46,6 +46,31 @@ CLAUDE_QUICK_TIMEOUT = int(os.environ.get("CLAUDE_QUICK_TIMEOUT", "30"))
 
 SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
 
+_DEFAULT_SETTINGS = {
+    "model": "default",
+    "claude_cli_binary": "claude",
+    "claude_cli_extra_args": [],
+    "cli_path_extra": "",
+    "ai_provider": "cli",
+    "openai_base_url": "",
+    "openai_api_key": "",
+    "openai_model": "",
+    "http_temperature": 0.2,
+    "http_max_tokens": 0,
+    # Optional named profiles: { "name": { "ai_provider", "openai_base_url", ... } }
+    "ai_profiles": {},
+    "active_ai_profile": "",
+}
+
+# OpenAI-compatible vendor presets (align with KnowledgeBuildAnalysis SetupPage AI_PRESETS)
+HTTP_PRESETS = [
+    {"id": "openai", "name": "OpenAI", "endpoint": "https://api.openai.com/v1", "model": "gpt-4o"},
+    {"id": "gemini", "name": "Gemini (OpenAI compat)", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-1.5-pro"},
+    {"id": "qwen", "name": "Qwen (DashScope)", "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-max"},
+    {"id": "deepseek", "name": "DeepSeek", "endpoint": "https://api.deepseek.com/v1", "model": "deepseek-chat"},
+    {"id": "custom", "name": "Custom", "endpoint": "", "model": ""},
+]
+
 AVAILABLE_MODELS = [
     {"id": "claude-opus-4-7", "label": "Opus 4.7", "desc": "최고 품질 (가장 강력)"},
     {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "desc": "균형잡힌 품질/속도"},
@@ -58,12 +83,14 @@ project_registry.set_model_validator(lambda m: m in _ALLOWED_MODEL_IDS)
 
 
 def _load_settings():
+    merged = dict(_DEFAULT_SETTINGS)
     if SETTINGS_FILE.exists():
         try:
-            return json.loads(SETTINGS_FILE.read_text("utf-8"))
+            user = json.loads(SETTINGS_FILE.read_text("utf-8"))
+            merged.update(user)
         except Exception:
             pass
-    return {"model": "default"}
+    return merged
 
 
 def _save_settings(s):
@@ -71,6 +98,322 @@ def _save_settings(s):
 
 
 SETTINGS = _load_settings()
+
+
+def _apply_active_profile():
+    """If active_ai_profile is set and exists in ai_profiles, overlay those keys."""
+    name = (SETTINGS.get("active_ai_profile") or "").strip()
+    if not name:
+        return
+    prof = (SETTINGS.get("ai_profiles") or {}).get(name)
+    if not isinstance(prof, dict):
+        return
+    for k in (
+        "ai_provider", "openai_base_url", "openai_api_key", "openai_model",
+        "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra",
+        "http_temperature", "http_max_tokens",
+    ):
+        if k in prof and prof[k] is not None:
+            SETTINGS[k] = prof[k]
+
+
+_apply_active_profile()
+
+
+def _settings_for_response():
+    """Strip secrets for JSON responses."""
+    s = dict(SETTINGS)
+    if s.get("openai_api_key"):
+        s["openai_api_key_set"] = True
+        s["openai_api_key"] = ""
+    else:
+        s["openai_api_key_set"] = False
+    return s
+
+
+def _cli_display_short() -> str:
+    """Short label for configured CLI binary (basename or token)."""
+    raw = os.path.expanduser((SETTINGS.get("claude_cli_binary") or "claude").strip() or "claude")
+    try:
+        return Path(raw.replace("\\", "/")).name
+    except Exception:
+        return raw[:48]
+
+
+def _http_vendor_label() -> str:
+    """Preset vendor name or truncated model id — no secrets."""
+    if SETTINGS.get("ai_provider") != "openai_compatible":
+        return ""
+    model = (SETTINGS.get("openai_model") or "").strip()
+    base = (SETTINGS.get("openai_base_url") or "").strip().rstrip("/")
+    if not model:
+        return ""
+    matches = []
+    for p in HTTP_PRESETS:
+        if (p.get("id") or "") == "custom":
+            continue
+        pm = (p.get("model") or "").strip()
+        if pm != model:
+            continue
+        ep = (p.get("endpoint") or "").strip().rstrip("/")
+        matches.append((str(p.get("name") or pm), ep))
+    if not matches:
+        return model[:48]
+    if len(matches) == 1:
+        return matches[0][0]
+    if base:
+        for name, ep in matches:
+            if ep and (base == ep or base.startswith(ep) or ep in base):
+                return name
+    return matches[0][0]
+
+
+def _build_llm_ui() -> dict:
+    """Provider identity for dashboard buttons and toolbar chip (no secrets)."""
+    http_ready = _openai_http_ready()
+    ap = SETTINGS.get("ai_provider") or "cli"
+    cli_short = _cli_display_short()
+    http_short = ""
+    if ap == "openai_compatible":
+        http_short = _http_vendor_label()
+        if not http_short:
+            om = (SETTINGS.get("openai_model") or "").strip()
+            http_short = om[:48] if om else ""
+
+    if ap == "openai_compatible" and http_ready:
+        mode = "mixed"
+    else:
+        mode = "cli_only"
+
+    qb = "http" if http_ready else "cli"
+    action_backend = {
+        "ingest": "cli",
+        "lint": "cli",
+        "lint_fix": "cli",
+        "reflect": "cli",
+        "write": "cli",
+        "compare": "cli",
+        "review_refresh": "cli",
+        "slides": "cli",
+        "fix_citations": "cli",
+        "suggest_sources": "cli",
+        "query_save": "cli",
+        "query": qb,
+        "assistant": qb,
+    }
+    return {
+        "cli_short": cli_short,
+        "http_short": http_short,
+        "mode": mode,
+        "http_ready": http_ready,
+        "action_backend": action_backend,
+    }
+
+
+def _parse_cli_path_extra_dirs():
+    """Return list of existing directory paths for PATH prefix (validated)."""
+    raw = SETTINGS.get("cli_path_extra") or ""
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    tokens = []
+    for line in raw.replace("\r", "\n").split("\n"):
+        for seg in line.split(os.pathsep):
+            s = seg.strip()
+            if s:
+                tokens.append(s)
+    out = []
+    for p in tokens:
+        try:
+            cand = Path(p).expanduser()
+            if ".." in cand.parts:
+                continue
+            r = cand.resolve(strict=False)
+            if r.is_dir():
+                out.append(str(r))
+        except Exception:
+            continue
+    return out
+
+
+def _effective_path_env_value():
+    """PATH string: extra dirs first, then os.environ PATH."""
+    extra = _parse_cli_path_extra_dirs()
+    base = os.environ.get("PATH", "")
+    if not extra:
+        return base
+    sep = os.pathsep
+    return sep.join(extra) + (sep + base if base else "")
+
+
+def _cli_subprocess_env():
+    """Copy of os.environ with PATH augmented when cli_path_extra is set."""
+    env = os.environ.copy()
+    ev = _effective_path_env_value()
+    if ev != os.environ.get("PATH", ""):
+        env["PATH"] = ev
+    return env
+
+
+def get_claude_cli_executable():
+    """Resolved path or command name for the configured Claude Code CLI."""
+    name = os.path.expanduser((SETTINGS.get("claude_cli_binary") or "claude").strip() or "claude")
+    if os.path.isabs(name):
+        p = Path(name)
+        if p.is_file() and os.access(str(p), os.X_OK):
+            return str(p.resolve())
+        if p.is_file():
+            return str(p.resolve())
+    path_arg = _effective_path_env_value()
+    resolved = shutil.which(name, path=path_arg)
+    if resolved:
+        return resolved
+    return name
+
+
+def _parse_claude_extra_args():
+    """Optional JSON array of CLI flags — only tokens starting with -- (max 20)."""
+    raw = SETTINGS.get("claude_cli_extra_args")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for x in raw[:20]:
+        if isinstance(x, str) and x.startswith("--") and len(x) < 200:
+            out.append(x)
+    return out
+
+
+def _openai_http_ready():
+    if SETTINGS.get("ai_provider") != "openai_compatible":
+        return False
+    base = (SETTINGS.get("openai_base_url") or "").strip()
+    key = (SETTINGS.get("openai_api_key") or "").strip()
+    model = (SETTINGS.get("openai_model") or "").strip()
+    return bool(base and key and model)
+
+
+_QUERY_RAG_TOP_K = 8
+_QUERY_INDEX_EXCERPT_MAX = 6000
+_CJK_HAN_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _query_contains_cjk_han(text: str) -> bool:
+    return bool(_CJK_HAN_RE.search(text or ""))
+
+
+def _query_response_language_line(question: str, lang_ui: str | None) -> str:
+    """Single English instruction line for response language: Han in question forces Chinese."""
+    if _query_contains_cjk_han(question):
+        return "Respond in Simplified Chinese."
+    lg = (lang_ui or "").strip().lower()
+    if lg == "zh":
+        return "Respond in Simplified Chinese."
+    if lg == "ko":
+        return "Respond in Korean."
+    return "Respond in English."
+
+
+def _wiki_rel_for_project(proj, wiki_file_rel: str) -> str:
+    """PROJECT_ROOT-relative path for a file under this project's wiki_dir."""
+    wf = wiki_file_rel.replace("\\", "/").strip().lstrip("/")
+    try:
+        return str((proj.wiki_dir / wf).resolve().relative_to(PROJECT_ROOT))
+    except ValueError:
+        slug = getattr(proj, "slug", "") or ""
+        if slug:
+            return f"projects/{slug}/wiki/{wf}"
+        return f"wiki/{wf}"
+
+
+def openai_chat_completion(messages, system=None, timeout=120):
+    """OpenAI-compatible POST /chat/completions (stdlib only). → (ok, text, err)."""
+    base = (SETTINGS.get("openai_base_url") or "").strip().rstrip("/")
+    key = (SETTINGS.get("openai_api_key") or "").strip()
+    model = (SETTINGS.get("openai_model") or "").strip()
+    if not base or not key or not model:
+        return (False, "", "OpenAI-compatible provider not fully configured (base URL, API key, model).")
+    url = base + "/chat/completions"
+    msg_list = []
+    if system:
+        msg_list.append({"role": "system", "content": system})
+    msg_list.extend(messages)
+    try:
+        temp = float(SETTINGS.get("http_temperature", 0.2))
+    except (TypeError, ValueError):
+        temp = 0.2
+    temp = max(0.0, min(2.0, temp))
+    try:
+        max_tok = int(SETTINGS.get("http_max_tokens") or 0)
+    except (TypeError, ValueError):
+        max_tok = 0
+    payload = {"model": model, "messages": msg_list, "temperature": temp}
+    if max_tok > 0:
+        payload["max_tokens"] = max_tok
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", "Bearer " + key)
+    try:
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        choice = (body.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        text = msg.get("content") or ""
+        return (True, text[:32000], "")
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            detail = str(e)
+        return (False, "", f"HTTP {e.code}: {detail}")
+    except Exception as e:
+        return (False, "", str(e)[:500])
+
+
+def run_claude_cli(prompt, timeout=None, cwd=None, project=None):
+    """Run Claude Code CLI subprocess (tools enabled). → (ok, output, error)."""
+    t = timeout or CLAUDE_TIMEOUT
+    target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
+    exe = get_claude_cli_executable()
+    cmd = (
+        [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
+        + _model_args_for(project)
+        + _parse_claude_extra_args()
+        + ["--output-format", "text", prompt]
+    )
+    try:
+        r = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=t,
+            cwd=target_cwd,
+            env=_cli_subprocess_env(),
+        )
+        err = r.stderr[:500] if r.returncode != 0 else ""
+        return (r.returncode == 0, r.stdout[:4000], err)
+    except subprocess.TimeoutExpired:
+        return (False, "", _timeout_hint())
+    except FileNotFoundError:
+        bin_name = SETTINGS.get("claude_cli_binary", "claude")
+        return (False, "", f"CLI not found: {bin_name}. Adjust claude_cli_binary or cli_path_extra (shell aliases are not visible); use an absolute path or a wrapper script.")
+
+
+def run_claude(prompt, timeout=None, cwd=None, project=None, force_cli=True):
+    """Run AI prompt: optional OpenAI-compatible HTTP when configured, else CLI.
+
+    force_cli=False enables HTTP completions for assistant/simple tasks when ai_provider is openai_compatible.
+    Tool-based flows (Ingest, Lint, …) must keep force_cli=True (default).
+    """
+    if not force_cli and _openai_http_ready():
+        ok, text, err = openai_chat_completion([{"role": "user", "content": prompt}], timeout=timeout or 120)
+        return (ok, text[:4000], err)
+    return run_claude_cli(prompt, timeout=timeout, cwd=cwd, project=project)
 
 
 def _claude_model_args():
@@ -308,7 +651,15 @@ def parse_fm(text):
 
 
 def extract_links(body):
-    return sorted({m.group(1).strip() + (".md" if not m.group(1).strip().endswith(".md") else "") for m in WIKILINK_RE.finditer(body)})
+    results = set()
+    for m in WIKILINK_RE.finditer(body):
+        link = m.group(1).strip()
+        # Strip #anchor portion
+        link = link.split('#')[0]
+        if not link.endswith('.md'):
+            link += '.md'
+        results.add(link)
+    return sorted(results)
 
 
 def _timeout_hint():
@@ -332,39 +683,30 @@ def _model_args_for(project=None):
     return _claude_model_args()
 
 
-def run_claude(prompt, timeout=None, cwd=None, project=None):
-    """claude -p 실행 → (ok, output, error). cwd는 project.root 권장."""
-    t = timeout or CLAUDE_TIMEOUT
-    target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
-    try:
-        r = subprocess.run(
-            ["claude", "-p", "--allowedTools", CLAUDE_TOOLS] + _model_args_for(project) + ["--output-format", "text", prompt],
-            capture_output=True, text=True, timeout=t,
-            cwd=target_cwd,
-        )
-        err = r.stderr[:500] if r.returncode != 0 else ""
-        return (r.returncode == 0, r.stdout[:4000], err)
-    except subprocess.TimeoutExpired:
-        return (False, "", _timeout_hint())
-    except FileNotFoundError:
-        return (False, "", "claude CLI not found in PATH. Install: npm install -g @anthropic-ai/claude-code")
-
-
 def run_claude_tracked(prompt, cwd=None, project=None):
-    """claude -p를 stream-json으로 실행하여 Read 호출을 추적.
+    """Trace Claude CLI stream-json events (Query only — HTTP queries use _do_query_openai_rag).
+
     → (ok, answer, error, files_read, token_usage)"""
     target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
+    exe = get_claude_cli_executable()
+    cmd = (
+        [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
+        + _model_args_for(project)
+        + _parse_claude_extra_args()
+        + ["--output-format", "stream-json", "--verbose", prompt]
+    )
     try:
         r = subprocess.run(
-            ["claude", "-p", "--allowedTools", CLAUDE_TOOLS] + _model_args_for(project) +
-            ["--output-format", "stream-json", "--verbose", prompt],
+            cmd,
             capture_output=True, text=True, timeout=CLAUDE_TIMEOUT,
             cwd=target_cwd,
+            env=_cli_subprocess_env(),
         )
     except subprocess.TimeoutExpired:
         return (False, "", _timeout_hint(), [], {})
     except FileNotFoundError:
-        return (False, "", "claude CLI not found in PATH. Install: npm install -g @anthropic-ai/claude-code", [], {})
+        bin_name = SETTINGS.get("claude_cli_binary", "claude")
+        return (False, "", f"CLI not found: {bin_name}. Use absolute path or cli_path_extra.", [], {})
 
     files_read = []
     answer = ""
@@ -455,6 +797,32 @@ def _get_query_stats(n=20, query_log=None):
 
 # ─── wiki data ───
 
+def _normalize_ui_lang(code):
+    if not code:
+        return None
+    c = str(code).strip().lower().replace("_", "-")
+    if c.startswith("zh"):
+        return "zh"
+    if c in ("en", "ko"):
+        return c
+    return None
+
+
+def _display_title(meta, fallback_stem, ui_lang=None):
+    """Pick visible title: optional title_zh/title_en/title_ko, then title, then stem."""
+    stem_display = fallback_stem.replace("-", " ").title()
+    if ui_lang in ("en", "ko", "zh"):
+        lk = {"en": "title_en", "ko": "title_ko", "zh": "title_zh"}.get(ui_lang)
+        if lk:
+            tv = meta.get(lk)
+            if isinstance(tv, str) and tv.strip():
+                return tv.strip()
+    bt = meta.get("title")
+    if isinstance(bt, str) and bt.strip():
+        return bt.strip()
+    return stem_display
+
+
 def _resolve_project(slug=None):
     """slug → Project.
 
@@ -464,7 +832,7 @@ def _resolve_project(slug=None):
     return project_registry.get_project(slug or None)
 
 
-def build_wiki_data(project_slug=None):
+def build_wiki_data(project_slug=None, ui_lang=None):
     proj = _resolve_project(project_slug)
     wiki_dir = proj.wiki_dir
     raw_dir = proj.raw_dir
@@ -485,21 +853,36 @@ def build_wiki_data(project_slug=None):
         pt = meta.get("type", "unknown")
         type_counts[pt] = type_counts.get(pt, 0) + 1
         folder = str(rel.parent) if rel.parent != Path(".") else ""
+        disp_title = _display_title(meta, md.stem, ui_lang)
         pages.append({
             "filename": filename, "folder": folder,
-            "title": meta.get("title", md.stem.replace("-", " ").title()),
+            "title": disp_title,
             "type": pt, "created": meta.get("created", ""), "updated": meta.get("updated", ""),
             "tags": meta.get("tags", []), "sources": meta.get("sources", []),
             "links": links, "word_count": len(body.split()), "content": body.strip(),
         })
         node_ids.add(filename)
-        nodes.append({"id": filename, "label": meta.get("title", md.stem), "type": pt})
+        nodes.append({"id": filename, "label": disp_title, "type": pt})
         for lnk in links:
             edges.append({"from": filename, "to": lnk})
+    # Build basename → filename lookup table
+    basename_lookup = {}
+    for fid in node_ids:
+        base = os.path.basename(fid)
+        basename_lookup[base] = fid
+        stem = fid.replace('.md', '')
+        basename_lookup[stem] = fid
+
     for e in edges:
-        if e["to"] not in node_ids:
-            node_ids.add(e["to"])
-            nodes.append({"id": e["to"], "label": e["to"].replace(".md", "").replace("-", " ").title(), "type": "missing"})
+        target = e["to"]
+        resolved = basename_lookup.get(target)
+        if resolved:
+            e["to"] = resolved  # Replace with full path
+        else:
+            if target not in node_ids:
+                node_ids.add(target)
+                stub = target.split("#", 1)[0].replace(".md", "")
+                nodes.append({"id": target, "label": stub.replace("-", " ").title(), "type": "missing"})
     log_entries = []
     lf = wiki_dir / "log.md"
     if lf.exists():
@@ -644,21 +1027,33 @@ def _read_obsidian_facts():
 
 def check_status():
     claude_ok, claude_ver = False, ""
+    exe = get_claude_cli_executable()
     try:
-        r = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            [exe, "--version"],
+            capture_output=True, text=True, timeout=5,
+            env=_cli_subprocess_env(),
+        )
         if r.returncode == 0:
             claude_ok = True
             claude_ver = r.stdout.strip().split("\n")[0]
     except Exception:
         pass
     return {
-        "claude": {"connected": claude_ok, "version": claude_ver},
+        "claude": {"connected": claude_ok, "version": claude_ver, "binary": SETTINGS.get("claude_cli_binary", "claude")},
+        "ai_provider": SETTINGS.get("ai_provider", "cli"),
+        "openai_configured": _openai_http_ready(),
         "obsidian": _read_obsidian_facts(),
+        "llm_ui": _build_llm_ui(),
     }
 
 
 def diagnose_claude():
     """Claude CLI를 빠르게 점검 — 설치, 인증, 모델 응답 시간"""
+    env_cli = _cli_subprocess_env()
+    path_preview = env_cli.get("PATH", "")[:280]
+    extra_dirs = _parse_cli_path_extra_dirs()
+
     result = {
         "cli_installed": False,
         "version": "",
@@ -671,22 +1066,43 @@ def diagnose_claude():
         "error": "",
         "config_timeout": CLAUDE_TIMEOUT,
         "advice": [],
+        "resolved_executable": "",
+        "effective_path_preview": path_preview,
+        "cli_path_extra_count": len(extra_dirs),
     }
+
+    exe = get_claude_cli_executable()
+    result["cli_binary"] = SETTINGS.get("claude_cli_binary", "claude")
+    result["resolved_executable"] = exe
 
     # 1. 버전 확인
     try:
-        r = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            [exe, "--version"],
+            capture_output=True, text=True, timeout=10,
+            env=env_cli,
+        )
         if r.returncode == 0:
             result["cli_installed"] = True
             result["version"] = r.stdout.strip().split("\n")[0]
         else:
-            result["error"] = r.stderr[:200] or "claude --version 실패"
+            result["error"] = r.stderr[:200] or "CLI --version failed"
     except FileNotFoundError:
-        result["error"] = "claude CLI 미설치. npm install -g @anthropic-ai/claude-code"
-        result["advice"].append("Install Claude CLI: npm install -g @anthropic-ai/claude-code")
+        result["error"] = f"CLI not found ({result['cli_binary']}). npm install -g @anthropic-ai/claude-code or set claude_cli_binary."
+        result["advice"].append("Install Claude CLI or set claude_cli_binary to an absolute path.")
+        result["advice"].append(
+            "Shell aliases (e.g. claude-qwen) are invisible to the server — use scripts/memex-claude-vendor.sh "
+            "(install via scripts/install-memex-cli-wrappers.sh), an absolute path, or cli_path_extra."
+        )
+        cb = (result.get("cli_binary") or "").strip()
+        if cb and os.path.sep not in cb:
+            result["advice"].append(
+                "If the name only resolves after sourcing dotfiles, run `command -v <name>` or `type <name>` "
+                "in a shell without aliases and paste the resolved filesystem path into claude_cli_binary."
+            )
         return result
     except subprocess.TimeoutExpired:
-        result["error"] = "claude --version timeout"
+        result["error"] = "CLI --version timeout"
         return result
 
     if not result["cli_installed"]:
@@ -695,10 +1111,12 @@ def diagnose_claude():
     # 2. 짧은 prompt로 응답 시간 측정 (인증 + 모델 접근 동시 확인)
     try:
         t0 = time.time()
+        exe = get_claude_cli_executable()
         r = subprocess.run(
-            ["claude", "-p"] + _claude_model_args() + ["--output-format", "text", "Reply with the single word OK."],
+            [exe, "-p"] + _claude_model_args() + _parse_claude_extra_args() + ["--output-format", "text", "Reply with the single word OK."],
             capture_output=True, text=True, timeout=CLAUDE_QUICK_TIMEOUT,
             cwd=str(PROJECT_ROOT),
+            env=_cli_subprocess_env(),
         )
         elapsed = time.time() - t0
         result["quick_test_seconds"] = round(elapsed, 1)
@@ -1034,21 +1452,21 @@ def do_ingest(title, content, folder="", project_slug=None):
     ts = datetime.now().strftime("%Y-%m-%d-%H%M")
     report_rel = f"ingest-reports/{ts}-{slug}.md"
     (proj.ingest_reports).mkdir(parents=True, exist_ok=True)
-    folder_inst = f" wiki/{folder}/ 폴더 하위에 페이지를 생성해." if folder else ""
+    folder_inst = f" Place any new pages under wiki/{folder}/." if folder else ""
     idx_inst = get_index_instruction(wiki_dir)
 
     prompt = f"""{idx_inst}
-중요: raw/ 디렉토리의 파일을 절대 수정/삭제하지 마라. raw/는 불변이다. wiki/에만 쓰기.
-Ingest raw/{slug}.md — 이 소스를 읽고 CLAUDE.md 지침대로 wiki 페이지들을 생성/갱신해. 핵심 내용 논의는 생략하고 바로 실행해.{folder_inst}
+IMPORTANT: Never modify or delete files under raw/ — raw/ is immutable. Only write under wiki/.
+Ingest raw/{slug}.md — read this source and create/update wiki pages according to CLAUDE.md. Skip preamble and execute.{folder_inst}
 
-작업이 끝나면:
-1. 마지막에 왜 이런 판단을 했는지 3~5줄로 요약해 (REASONING: 으로 시작).
-2. {report_rel} 파일을 생성해. 형식:
+When finished:
+1. Summarize why you made these choices in 3–5 lines (start with REASONING:).
+2. Create {report_rel} using this shape:
 # Ingest Report: {title}
 ## Created
-- wiki/path/file.md — WHY: 1줄 이유
+- wiki/path/file.md — WHY: one line
 ## Modified
-- wiki/path/file.md — WHY: 1줄 이유
+- wiki/path/file.md — WHY: one line
 ## New cross-links
 - [[a]] ↔ [[b]]"""
 
@@ -1084,14 +1502,87 @@ Ingest raw/{slug}.md — 이 소스를 읽고 CLAUDE.md 지침대로 wiki 페이
     }
 
 
-def do_query(question, project_slug=None):
+def _do_query_openai_rag(proj, question: str, lang_line: str):
+    """OpenAI-compatible query: inject TF-IDF wiki snippets + index excerpt; English system prompt."""
+    scored = _tfidf_wiki_search(proj, question, top_k=_QUERY_RAG_TOP_K)
+    files_order: list[str] = []
+    seen: set[str] = set()
+
+    def _add(p: str) -> None:
+        if p not in seen:
+            seen.add(p)
+            files_order.append(p)
+
+    index_ex = ""
+    index_p = proj.wiki_dir / "index.md"
+    if index_p.is_file():
+        raw = index_p.read_text("utf-8")
+        _, body = parse_fm(raw)
+        index_ex = (body or "")[:_QUERY_INDEX_EXCERPT_MAX]
+        _add(_wiki_rel_for_project(proj, "index.md"))
+
+    excerpt_parts = []
+    for row in scored:
+        rel = row["filename"]
+        _add(_wiki_rel_for_project(proj, rel))
+        excerpt_parts.append(f"### {rel} (score={row['score']})\n{row.get('snippet', '')}")
+
+    excerpts_block = "\n\n".join(excerpt_parts) if excerpt_parts else "(No TF-IDF matches — rely on index excerpt only if present.)"
+
+    system = (
+        "You answer using ONLY the wiki index excerpt and retrieved wiki excerpts below. "
+        "Do not invent facts beyond them. "
+        "Cite relevant wiki pages using [[wikilink]] syntax.\n"
+        + lang_line
+    )
+    user_content = (
+        "## Wiki index excerpt (truncated)\n"
+        + (index_ex if index_ex else "(wiki/index.md missing or empty)") + "\n\n"
+        "## Retrieved wiki excerpts\n"
+        + excerpts_block
+        + "\n\n## Question\n"
+        + question
+    )
+
+    ok, ans, err = openai_chat_completion(
+        [{"role": "user", "content": user_content}],
+        system=system,
+        timeout=CLAUDE_TIMEOUT,
+    )
+    return ok, ans[:4000], err, files_order, {}
+
+
+def do_query(question, project_slug=None, lang=None):
     proj = project_registry.get_project(project_slug)
+    q = (question or "").strip()
+    if not q:
+        return {
+            "ok": False,
+            "project": proj.slug,
+            "answer": "",
+            "error": "Empty question",
+            "files_read": [],
+            "wiki_files": 0,
+            "raw_files": 0,
+            "wiki_ratio": 0.0,
+            "token_usage": {},
+        }
+
+    lang_line = _query_response_language_line(q, lang)
     idx_inst = get_index_instruction(proj.wiki_dir)
-    prompt = f"""다음 질문에 답해. {idx_inst}
-관련 wiki 페이지를 찾아 읽은 뒤 답변을 합성해.
-답변에 관련 위키 페이지를 [[wikilink]]로 인용해.
-질문: {question}"""
-    ok, answer, err, files_read, token_usage = run_claude_tracked(prompt, project=proj)
+    prompt = f"""Answer using this project's wiki. {idx_inst}
+Find and read relevant wiki pages, then synthesize an answer.
+Cite relevant wiki pages with [[wikilink]] syntax.
+
+Language: {lang_line}
+
+Question:
+{q}"""
+
+    if _openai_http_ready():
+        ok, answer, err, files_read, token_usage = _do_query_openai_rag(proj, q, lang_line)
+    else:
+        ok, answer, err, files_read, token_usage = run_claude_tracked(prompt, project=proj)
 
     # 경로가 project-relative인지 root-relative인지 다를 수 있으므로 둘 다 커버
     def _is_wiki(f):
@@ -1104,7 +1595,7 @@ def do_query(question, project_slug=None):
     total = len(files_read)
     wiki_ratio = len(wiki_files) / total if total > 0 else 0.0
 
-    _log_query(question, files_read, round(wiki_ratio, 3), len(answer), query_log=proj.query_log)
+    _log_query(q, files_read, round(wiki_ratio, 3), len(answer), query_log=proj.query_log)
 
     return {
         "ok": ok, "project": proj.slug, "answer": answer, "error": err,
@@ -1144,7 +1635,10 @@ tags:
 {content}
 """
     filepath.write_text(md, encoding="utf-8")
-    prompt = f"wiki/{slug}.md 페이지를 방금 생성했다. wiki/index.md의 Analyses 섹션에 이 페이지를 추가하고, wiki/log.md에 query 로그를 남기고, wiki/overview.md 통계를 갱신해."
+    prompt = (
+        f"You just created wiki/{slug}.md. Add it to the Analyses section of wiki/index.md, append a query entry to wiki/log.md, "
+        "and refresh statistics in wiki/overview.md."
+    )
     run_claude(prompt, project=proj)
     git_mgr.commit_query_save(title, project=proj)
     return {"ok": True, "project": proj.slug, "filename": f"{slug}.md"}
@@ -1156,18 +1650,17 @@ def do_fix_citations(page_filename, project_slug=None):
     filepath = proj.wiki_dir / page_filename
     if not filepath.exists():
         return {"ok": False, "error": "Page not found"}
-    prompt = f"""wiki/{page_filename}을 읽어.
-이 페이지에서 주장(claim)을 하는 문장 중 inline citation [^src-*]이 없는 것을 찾아.
-각 claim에 적절한 [^src-소스슬러그] citation을 추가해.
+    prompt = f"""Read wiki/{page_filename}.
+Find factual claims whose sentences lack inline citations [^src-*].
+Add appropriate [^src-source-slug] citations where a matching source exists.
 
-규칙:
-- citation 형식: 문장 끝에 [^src-소스슬러그]
-- 페이지 하단에 정의 추가: [^src-소스슬러그]: [[source-소스슬러그]]
-- wiki/index.md의 Sources 섹션에 있는 소스만 사용
-- 해당하는 소스가 없으면 citation을 추가하지 마
-- 기존 citation은 유지해
+Rules:
+- Place citations at sentence ends; definitions at bottom: [^src-slug]: [[source-slug]]
+- Only use sources listed under Sources in wiki/index.md
+- Do not add a citation when no matching source exists
+- Keep existing citations
 
-수정 후 결과를 보고해."""
+Report what you changed."""
     ok, out, err = run_claude(prompt, project=proj)
     if ok:
         git_mgr._stage_all(project=proj)
@@ -1238,39 +1731,39 @@ def do_reflect(window="last-10-ingests", project_slug=None):
     today = datetime.now().strftime("%Y-%m-%d")
     report_path = f"reflect-reports/{today}.md"
 
-    prompt = f"""다음 데이터를 분석해:
+    prompt = f"""Analyze the following data:
 
-## 최근 Wiki Log (발췌)
+## Recent wiki log (excerpt)
 {ctx['log_text'][-1500:]}
 
-## Ingest Reports
+## Ingest reports
 {reports_summary[:3000]}
 
-## wiki_ratio 낮은 쿼리
+## Low wiki_ratio queries
 {low_ratio}
 
-위 데이터를 바탕으로 다음을 분석해:
+Produce:
 
-1. **SUGGESTED_PAGES**: 반복적으로 등장하는 엔티티/컨셉 중 아직 wiki/에 전용 페이지가 없는 것을 찾아 리스트. 각 항목에 왜 필요한지 1줄.
+1. **SUGGESTED_PAGES**: Entities/concepts that appear often but lack dedicated wiki pages — list each with one line why it matters.
 
-2. **SUGGESTED_SCHEMA**: 여러 ingest에서 같은 판단 패턴이 보이면, CLAUDE.md에 추가할 규칙을 제안. diff 형태로.
+2. **SUGGESTED_SCHEMA**: If repeated ingest judgment patterns emerge, propose rules to add to CLAUDE.md (diff-style OK).
 
-3. **SUGGESTED_SOURCES**: wiki_ratio가 낮았던 쿼리의 주제에 대한 소스가 부족하다는 의미. 해당 주제를 보강할 검색어 리스트를 추천.
+3. **SUGGESTED_SOURCES**: From low-ratio queries, suggest search terms / sources that would strengthen those topics.
 
-4. **CONTRADICTION_REVIEW**: 자주 충돌하는 소스 부류가 있으면 contradiction 정책 보완을 제안.
+4. **CONTRADICTION_REVIEW**: If conflicting source behaviors appear often, propose contradiction-policy improvements.
 
-결과를 {report_path} 파일로 저장해. 형식:
+Save the result to {report_path}. Use this outline:
 # Reflect Report — {today}
 ## Suggested Pages
-- page-name — 이유
+- page-name — why
 ## Suggested Schema Updates
-(diff 또는 추가할 규칙 텍스트)
+(diff or prose)
 ## Suggested Sources
-- "검색어" — 이유
+- "term" — why
 ## Contradiction Review
-(발견 사항 또는 "없음")
+(findings or \"none\")
 
-또한 각 섹션 제목 앞에 SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGGESTED_SOURCES:, CONTRADICTION_REVIEW: 마커를 넣어 파싱 가능하게 해."""
+Include parse markers before sections: SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGGESTED_SOURCES:, CONTRADICTION_REVIEW:"""
 
     ok, out, err = run_claude(prompt, project=proj)
     if ok:
@@ -1327,63 +1820,60 @@ def do_lint(project_slug=None):
     today = datetime.now().strftime("%Y-%m-%d")
     idx_inst = get_index_instruction(proj.wiki_dir)
     prompt = f"""{idx_inst}
-CLAUDE.md의 "Lint 체크리스트" 섹션을 읽고 wiki 전체를 점검해.
+Read the "Lint checklist" section in CLAUDE.md and audit the entire wiki.
 
-아래 체크리스트를 **모두** 수행:
+Run **all** checks:
 
-### 구조 검사
-- frontmatter 없거나 type 필드가 허용 값이 아닌 페이지
-- status: superseded인데 superseded_by 없는 페이지
-- status: disputed인데 ## Disputed 섹션 없는 페이지
-- superseded_by가 가리키는 페이지가 존재하지 않음
+### Structure
+- Pages missing frontmatter or invalid type
+- status: superseded without superseded_by
+- status: disputed without ## Disputed
+- superseded_by targets missing pages
 
-### Citation 검사
-- inline citation [^src-*] 없는 사실적 claim 문장
-- 페이지별 citation 비율 (claim 수 대비 cited 수)
-- [^src-*] 참조인데 하단에 정의 없음
-- 정의된 source-summary 페이지가 wiki/에 없음
-- source_count가 실제 citation 수와 불일치
+### Citations
+- Factual claims missing [^src-*]
+- Per-page citation coverage
+- [^src-*] referenced but undefined at bottom
+- Referenced source-summary pages missing from wiki/
+- source_count mismatches actual citations
 
-### 연결 검사
-- orphan 페이지 (다른 페이지에서 [[wikilink]] 0개)
-- 본문에서 언급되었지만 자체 페이지가 없는 컨셉/엔티티
-- 관련 페이지인데 상호 링크 없음
+### Links
+- Orphan pages (no inbound [[wikilink]])
+- Mentioned concepts without pages
+- Related pages missing cross-links
 
-### 신선도 검사
-- last_updated가 30일 이상 지난 active 페이지 (오늘: {today})
-- source_count: 1인데 일반화 주장하는 페이지
-- confidence: high인데 source_count < 2인 페이지
+### Freshness (today: {today})
+- active pages with last_updated older than 30 days
+- source_count 1 but broad generalizations
+- confidence high but source_count < 2
 
-보고 형식:
+Report format:
 ## Lint Report — {today}
 ### Critical (must fix)
-- [ ] page.md — 문제 설명
+- [ ] page.md — issue + suggested fix
 ### Warning (should fix)
-- [ ] page.md — 문제 설명
+- [ ] page.md — issue + suggested fix
 ### Info (nice to have)
-- [ ] page.md — 문제 설명
-
-각 항목에 수정 제안을 포함해."""
+- [ ] page.md — issue + suggested fix"""
     ok, out, err = run_claude(prompt, project=proj)
     return {"ok": ok, "project": proj.slug, "report": out, "error": err}
 
 
 def do_lint_fix(project_slug=None):
     proj = project_registry.get_project(project_slug)
-    prompt = """방금 CLAUDE.md의 Lint 체크리스트로 점검을 했다. 발견된 모든 문제를 지금 수정해:
+    prompt = """You just ran the CLAUDE.md Lint checklist. Fix every issue found now:
 
-- frontmatter 누락/불일치 → 올바른 frontmatter 추가/수정
-- inline citation 없는 claim → 적절한 [^src-*] 추가 (소스가 존재하는 경우에만)
-- source_count 불일치 → 실제 citation 수로 갱신
-- last_updated 갱신 → 오늘 날짜로
-- orphan 페이지 → 관련 페이지에서 [[wikilink]] 추가
-- 누락된 교차참조 추가
-- 언급되었지만 페이지 없는 컨셉은 stub 페이지 생성 (최소 1개 citation 포함)
-- status/superseded_by 불일치 수정
-- disputed 페이지에 ## Disputed 섹션 추가
-- index.md, log.md, overview.md 갱신
+- Fix missing/invalid frontmatter
+- Add [^src-*] to uncited claims when a source exists
+- Align source_count with actual citations
+- Bump last_updated to today where appropriate
+- Add inbound [[wikilink]] to orphan pages; add missing cross-links
+- Create stub pages for mentioned concepts without pages (min. one citation)
+- Fix status / superseded_by inconsistencies
+- Add ## Disputed where status demands it
+- Refresh wiki/index.md, wiki/log.md, wiki/overview.md as needed
 
-수정한 내용을 Critical/Warning/Info 별로 요약해서 보고해."""
+Summarize fixes by Critical / Warning / Info."""
     ok, out, err = run_claude(prompt, project=proj)
     if ok:
         git_mgr.commit_lint_fix(project=proj)
@@ -1396,28 +1886,28 @@ def do_write(topic, length="medium", style="blog", project_slug=None):
     if not topic or not topic.strip():
         return {"ok": False, "error": "Topic is required"}
     proj = project_registry.get_project(project_slug)
-    word_map = {"short": "약 300단어", "medium": "약 700단어", "long": "약 1500단어"}
+    word_map = {"short": "~300 words", "medium": "~700 words", "long": "~1500 words"}
     style_map = {
-        "blog": "블로그 글 스타일 (친근하고 명확하게)",
-        "paper": "학술적 스타일 (정확하고 엄밀하게)",
-        "explainer": "해설 스타일 (초보자도 이해 가능하게)",
+        "blog": "Blog tone (friendly, clear)",
+        "paper": "Academic tone (precise, rigorous)",
+        "explainer": "Explainer tone (accessible to newcomers)",
     }
     idx_inst = get_index_instruction(proj.wiki_dir)
     prompt = f"""{idx_inst}
-주제: {topic}
-분량: {word_map.get(length, '약 700단어')}
-스타일: {style_map.get(style, '블로그 글 스타일')}
+Topic: {topic}
+Length: {word_map.get(length, '~700 words')}
+Style: {style_map.get(style, 'Blog tone')}
 
-위키에 축적된 페이지를 활용해 이 주제로 글을 작성해.
+Use accumulated wiki pages as sources.
 
-요구사항:
-- 모든 사실적 주장에 [^src-소스슬러그] inline citation 필수
-- 관련 위키 페이지는 [[wikilink]]로 참조
-- 페이지 최하단에 [^src-*]: [[source-*]] 형식 각주 정의
-- 서론-본론-결론 구조
-- 위키에 관련 소스가 없는 주제는 언급하지 마
+Requirements:
+- Every factual claim needs [^src-source-slug] inline citations
+- Reference related wiki pages with [[wikilink]]
+- Footnote definitions at bottom: [^src-*]: [[source-*]]
+- Introduction / body / conclusion
+- Do not invent topics lacking supporting sources in the wiki
 
-바로 글만 출력 (메타 설명 없이)."""
+Output only the article (no meta commentary)."""
     ok, out, err = run_claude(prompt, project=proj)
     return {"ok": ok, "project": proj.slug, "draft": out, "error": err}
 
@@ -1434,14 +1924,14 @@ def do_compare(page_a, page_b, save_as="", project_slug=None):
     if not fa.exists() or not fb.exists():
         return {"ok": False, "error": "Page not found"}
 
-    prompt = f"""wiki/{page_a}와 wiki/{page_b}를 읽고 비교 분석해.
+    prompt = f"""Read wiki/{page_a} and wiki/{page_b}, then compare them.
 
-구조:
-## 공통점
-## 차이점
-## 관계 / 시사점
+Structure:
+## Common ground
+## Differences
+## Relationship / implications
 
-각 주장에 [^src-*] citation 포함. 양 페이지의 소스를 모두 활용."""
+Include [^src-*] citations for claims; draw on sources from both pages."""
 
     ok, out, err = run_claude(prompt, project=proj)
     saved_file = None
@@ -1516,13 +2006,13 @@ def do_review_refresh(filename, project_slug=None):
     fp = proj.wiki_dir / filename
     if not fp.exists():
         return {"ok": False, "error": "Page not found"}
-    prompt = f"""wiki/{filename}를 읽고 다음을 수행해:
-1. 관련 소스(wiki/index.md의 Sources 섹션) 중 이 페이지에 새 관점·정보를 제공할 수 있는 소스가 있는지 확인
-2. 있다면 해당 소스의 citation과 함께 새 정보를 추가해 페이지를 갱신
-3. last_updated를 오늘 날짜로 갱신
-4. 추가한 내용을 요약해 보고
+    prompt = f"""Read wiki/{filename} and:
+1. Check Sources in wiki/index.md for material that could add new perspective to this page
+2. If yes, merge that material with proper [^src-*] citations and refresh the page
+3. Set last_updated to today
+4. Summarize what you added
 
-만약 관련 신규 소스가 없다면 "새로운 갱신 사항 없음. last_updated만 갱신함."으로 응답하고 last_updated만 갱신."""
+If nothing new applies, reply "No new updates; refreshed last_updated only." and only bump last_updated."""
     ok, out, err = run_claude(prompt, project=proj)
     if ok:
         git_mgr._stage_all(project=proj)
@@ -1541,18 +2031,18 @@ def do_slides(page_filename, project_slug=None):
     meta, body = parse_fm(content)
     title = meta.get("title", page_filename.replace(".md", ""))
 
-    prompt = f"""wiki/{page_filename}의 내용을 Marp 슬라이드 덱으로 변환해.
+    prompt = f"""Convert wiki/{page_filename} into a Marp slide deck.
 
-요구사항:
-- Marp frontmatter 포함 (marp: true, theme: default, paginate: true, class: invert)
-- 첫 슬라이드는 제목 + 부제
-- 한 슬라이드당 한 주제
-- bullet point 3-5개 내외
-- 코드 블록은 syntax highlighting 유지
-- 슬라이드 구분은 --- 사용
-- 원본의 citation ([^src-*])은 각 슬라이드 footer에 유지
+Requirements:
+- Include Marp frontmatter (marp: true, theme: default, paginate: true, class: invert)
+- Title slide with subtitle
+- One main idea per slide
+- 3–5 bullets per slide when applicable
+- Preserve syntax highlighting in code fences
+- Separate slides with ---
+- Keep citations ([^src-*]) in slide footers when present
 
-출력은 순수 Marp 마크다운만 (설명 없이)."""
+Output only raw Marp markdown (no explanations)."""
     ok, out, err = run_claude(prompt, project=proj)
     return {"ok": ok, "project": proj.slug, "marp": out, "error": err, "title": title}
 
@@ -1563,18 +2053,18 @@ def _tokenize(text):
     return re.findall(r"[\w가-힣]+", text.lower())
 
 
-def do_search(query, top_k=10, project_slug=None):
-    """간단한 TF-IDF 기반 검색 (stdlib만 사용)"""
-    proj = project_registry.get_project(project_slug)
-    wiki_dir = proj.wiki_dir
+def _tfidf_wiki_search(proj, query, top_k=10):
+    """TF-IDF over wiki/*.md (stdlib). Returns list of {filename, score, snippet}."""
     import math
+
+    wiki_dir = proj.wiki_dir
     q_tokens = _tokenize(query)
     if not q_tokens:
-        return {"ok": True, "project": proj.slug, "results": []}
+        return []
 
     docs = {}
     if not wiki_dir.exists():
-        return {"ok": True, "project": proj.slug, "results": []}
+        return []
     for md in wiki_dir.rglob("*.md"):
         rel = str(md.relative_to(wiki_dir))
         text = md.read_text("utf-8")
@@ -1584,16 +2074,14 @@ def do_search(query, top_k=10, project_slug=None):
             docs[rel] = {"tokens": tokens, "body": body}
 
     if not docs:
-        return {"ok": True, "results": []}
+        return []
 
-    # df 계산
     df = {}
     for doc in docs.values():
         for tok in set(doc["tokens"]):
             df[tok] = df.get(tok, 0) + 1
     N = len(docs)
 
-    # 각 문서의 TF-IDF 점수
     scored = []
     for rel, doc in docs.items():
         tf = {}
@@ -1605,7 +2093,6 @@ def do_search(query, top_k=10, project_slug=None):
                 idf = math.log((N + 1) / (df[qt] + 1)) + 1
                 score += (tf[qt] / len(doc["tokens"])) * idf
         if score > 0:
-            # 스니펫: 첫 번째 매칭 주변
             snippet = ""
             body_low = doc["body"].lower()
             for qt in q_tokens:
@@ -1613,30 +2100,41 @@ def do_search(query, top_k=10, project_slug=None):
                 if idx >= 0:
                     start = max(0, idx - 60)
                     end = min(len(doc["body"]), idx + 120)
-                    snippet = ("..." if start > 0 else "") + doc["body"][start:end] + ("..." if end < len(doc["body"]) else "")
+                    snippet = (
+                        ("..." if start > 0 else "")
+                        + doc["body"][start:end]
+                        + ("..." if end < len(doc["body"]) else "")
+                    )
                     break
             scored.append({"filename": rel, "score": round(score, 4), "snippet": snippet})
     scored.sort(key=lambda x: -x["score"])
-    return {"ok": True, "project": proj.slug, "results": scored[:top_k]}
+    return scored[:top_k]
+
+
+def do_search(query, top_k=10, project_slug=None):
+    """TF-IDF wiki search (stdlib only)."""
+    proj = project_registry.get_project(project_slug)
+    scored = _tfidf_wiki_search(proj, query, top_k)
+    return {"ok": True, "project": proj.slug, "results": scored}
 
 
 # ─── Related Sources Suggestion ───
 
 def do_suggest_sources(project_slug=None):
     proj = project_registry.get_project(project_slug)
-    prompt = """wiki/index.md와 최근 log.md를 읽어 현재 위키의 지식 커버리지를 파악해.
+    prompt = """Read wiki/index.md and recent wiki/log.md to judge coverage gaps.
 
-다음을 분석해 5~10개의 구체적인 "다음에 ingest할만한 소스 검색어"를 제안:
+Propose 5–10 concrete search terms or paper titles worth ingesting next:
 
-1. 언급되지만 전용 페이지가 없는 엔티티/컨셉
-2. 특정 주제에서 소스가 부족한 영역
-3. 최근 ingest의 확장 방향 (예: 방금 Transformer를 ingest했다면 → BERT 논문, GPT-3 논문 등)
+1. Entities/concepts mentioned often but lacking dedicated pages
+2. Topics with thin source coverage
+3. Natural extensions of recent ingests (e.g., after Transformer → BERT, GPT-3, …)
 
-출력 형식 (JSON 파싱 가능하게):
+Output one suggestion per line, parse-friendly:
 ```
-SUGGESTION: "검색어 또는 논문 제목" | WHY: 이유 | EXPECTED_PAGES: 이 소스가 보강할 위키 페이지 리스트
+SUGGESTION: "term or title" | WHY: reason | EXPECTED_PAGES: wiki pages this would strengthen
 ```
-각 줄마다 하나씩. 설명 없이 제안 리스트만."""
+Suggestions only — no preamble."""
     ok, out, err = run_claude(prompt, project=proj)
     suggestions = []
     if ok:
@@ -1669,7 +2167,7 @@ Key facts about the dashboard:
   * Create: + Folder, + Page
   * More: CLAUDE.md, Guide
 - Sidebar: drag right edge to resize (220-500px). Cmd/Ctrl+B to toggle. Click folder NAME (not arrow) for continuous folder view.
-- Header: language toggle (EN/한국어), model selector (Opus/Sonnet/Haiku/Default), Wiki Ratio gauge, index strategy badge.
+- Header: language toggle (English / 한국어 / 中文), model selector (Opus/Sonnet/Haiku/Default), Wiki Ratio gauge, index strategy badge.
 - Status bar (bottom-left): raw facts only. Claude CLI (on/off) + Obsidian (process + vault_open).
 - Per-page: Edit, Slides (Marp export), Delete.
 - Every ingest = git commit. Revertable via History.
@@ -1694,7 +2192,7 @@ ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, Memex(Karpathy LLM Wi
   * 만들기: + 폴더, + 페이지
   * 더보기: CLAUDE.md, 가이드
 - 사이드바: 우측 경계 드래그로 리사이즈(220-500px). Cmd/Ctrl+B로 토글. 폴더 **이름** 클릭(화살표 아님) → 연속 폴더 뷰.
-- 헤더: 언어 토글(EN/한국어), 모델 선택(Opus/Sonnet/Haiku/Default), Wiki Ratio 게이지, 인덱스 배지.
+- 헤더: 언어 토글(English / 한국어 / 中文), 모델 선택(Opus/Sonnet/Haiku/Default), Wiki Ratio 게이지, 인덱스 배지.
 - 상태 바(좌측 하단): raw facts만. Claude CLI + Obsidian(process + vault_open).
 - 페이지별: 편집, Slides(Marp 내보내기), 삭제.
 - 모든 수집 = git 커밋. 이력에서 되돌리기 가능.
@@ -1704,6 +2202,26 @@ ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, Memex(Karpathy LLM Wi
 답변은 **짧게(2~4문장)**, 행동 중심으로. 사용자가 위키 내용을 물으면 "그건 위키 질문이에요 — Query 기능(툴바 → 작업 → 질문)을 사용해 보세요." 라고 친근하게 안내.
 """
 
+ASSISTANT_CONTEXT_ZH = """你是 "Claude"，Memex（基于 Karpathy LLM Wiki 模式的个人知识库）的友好控制台助手。
+你的职责是回答**本控制台如何使用**——功能、点击位置、快捷键等。
+
+不要回答 wiki 正文类问题（应走 /api/query）。请引导用户使用「问答(Query)」功能。
+
+控制台要点：
+- 模式：Karpathy LLM Wiki — Claude（Claude Code CLI）从 raw/ 中来源构建持久 wiki。
+- raw/ 不可变（四层保护）。wiki/ 由 Claude 维护。CLAUDE.md 是模式说明文件。
+- 工具栏 5 类：工作（收录、问答、写作、比较）；分析（检查、反思、复习、引证）；浏览（搜索、图谱、历史）；创建（+文件夹、+页面）；更多（CLAUDE.md、指南）。
+- 侧栏：拖右缘 220–500px。Cmd/Ctrl+B 收起。在树中点击文件夹**名称**（非小箭头）进入连续阅读。
+- 标题栏：语言切换（English / 한국어 / 中文）、模型、Wiki Ratio、索引导航。
+- 左下状态栏：只显示事实。Claude CLI 与 Obsidian（进程 + vault 是否打开）。
+- 单页：编辑、Slides（Marp 导出）、删除。
+- 每次收录 = git 提交，可在历史中恢复。
+- 内联引用 [^src-*] 渲染为数字角标。
+- 索引策略：flat (<50) → hierarchical (50-200) → indexed (>200)。
+
+回答要**短（2–4 句）**、可操作。若问 wiki 正文内容，请友好说明：「这是 wiki 问题，请用工具栏 → 工作 → 问答(Query)。」
+"""
+
 
 def do_assistant_chat(question, lang="en", history=None):
     """대시보드 헬퍼 챗봇 — Claude CLI를 짧은 프롬프트로 호출"""
@@ -1711,25 +2229,24 @@ def do_assistant_chat(question, lang="en", history=None):
         return {"ok": False, "error": "Empty question"}
     history = history or []
     # 간단한 대화 형식
-    ctx = ASSISTANT_CONTEXT_KO if lang == "ko" else ASSISTANT_CONTEXT_EN
+    if lang == "ko":
+        ctx = ASSISTANT_CONTEXT_KO
+    elif lang == "zh":
+        ctx = ASSISTANT_CONTEXT_ZH
+    else:
+        ctx = ASSISTANT_CONTEXT_EN
     hist_text = ""
     for h in history[-4:]:
         role = "User" if h.get("role") == "user" else "Assistant"
         hist_text += f"\n{role}: {h.get('content','')}"
-    prompt = f"{ctx}\n\nConversation so far:{hist_text}\n\nUser: {question}\n\nAssistant (short, 2-4 sentences):"
-    # 도우미는 wiki/raw 파일을 읽지 않고 답변 생성만
-    try:
-        r = subprocess.run(
-            ["claude", "-p"] + _claude_model_args() + ["--output-format", "text", prompt],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(PROJECT_ROOT),
-        )
-        ans = r.stdout.strip()
-        return {"ok": r.returncode == 0, "answer": ans[:2000], "error": r.stderr[:300] if r.returncode != 0 else ""}
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "timeout"}
-    except FileNotFoundError:
-        return {"ok": False, "error": "claude CLI not found"}
+    if lang == "zh":
+        tail = "助手（请用中文，简短 2–4 句）："
+    else:
+        tail = "Assistant (short, 2-4 sentences):"
+    prompt = f"{ctx}\n\nConversation so far:{hist_text}\n\nUser: {question}\n\n{tail}"
+    # 도우미는 wiki/raw 파일을 읽지 않고 답변 생성만 — HTTP 또는 CLI
+    ok, ans, err = run_claude(prompt, timeout=60, cwd=str(PROJECT_ROOT), project=None, force_cli=False)
+    return {"ok": ok, "answer": (ans or "").strip()[:2000], "error": err[:300] if not ok else ""}
 
 
 # ─── Projects API (MP-03) ───
@@ -1871,6 +2388,164 @@ def delete_page(filename, project_slug=None):
     return {"ok": True, "project": proj.slug}
 
 
+def merge_dashboard_settings(body):
+    """Apply optional dashboard keys from POST body; persist SETTINGS."""
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "expected JSON object"}
+    if "claude_cli_binary" in body:
+        SETTINGS["claude_cli_binary"] = (body.get("claude_cli_binary") or "claude").strip() or "claude"
+    if "claude_cli_extra_args" in body:
+        SETTINGS["claude_cli_extra_args"] = body.get("claude_cli_extra_args")
+    if "ai_provider" in body:
+        ap = (body.get("ai_provider") or "cli").strip().lower()
+        if ap not in ("cli", "openai_compatible"):
+            return {"ok": False, "error": "ai_provider must be cli or openai_compatible"}
+        SETTINGS["ai_provider"] = ap
+    if "openai_base_url" in body:
+        SETTINGS["openai_base_url"] = (body.get("openai_base_url") or "").strip()
+    if "openai_model" in body:
+        SETTINGS["openai_model"] = (body.get("openai_model") or "").strip()
+    if "openai_api_key" in body:
+        key = body.get("openai_api_key")
+        if isinstance(key, str) and key.strip():
+            SETTINGS["openai_api_key"] = key.strip()
+    if "cli_path_extra" in body:
+        SETTINGS["cli_path_extra"] = body.get("cli_path_extra") if isinstance(body.get("cli_path_extra"), str) else ""
+    if "http_temperature" in body:
+        try:
+            ht = float(body.get("http_temperature"))
+            SETTINGS["http_temperature"] = max(0.0, min(2.0, ht))
+        except (TypeError, ValueError):
+            SETTINGS["http_temperature"] = 0.2
+    if "http_max_tokens" in body:
+        try:
+            SETTINGS["http_max_tokens"] = max(0, int(body.get("http_max_tokens")))
+        except (TypeError, ValueError):
+            SETTINGS["http_max_tokens"] = 0
+    if "active_ai_profile" in body:
+        SETTINGS["active_ai_profile"] = (body.get("active_ai_profile") or "").strip()
+    if "ai_profiles" in body and isinstance(body.get("ai_profiles"), dict):
+        SETTINGS["ai_profiles"] = body["ai_profiles"]
+    _save_settings(SETTINGS)
+    _apply_active_profile()
+    return {"ok": True}
+
+
+def api_ai_test_connection():
+    if not _openai_http_ready():
+        return {"ok": False, "error": "OpenAI-compatible provider not fully configured."}
+    ok, text, err = openai_chat_completion(
+        [{"role": "user", "content": 'Reply with exactly "OK".'}],
+        timeout=45,
+    )
+    return {"ok": ok, "preview": (text or "").strip()[:120], "error": err}
+
+
+def api_cli_test():
+    """Quick CLI probe — same resolution as ingest (PATH + cli_path_extra)."""
+    exe = get_claude_cli_executable()
+    env = _cli_subprocess_env()
+    hints = []
+    cb = (SETTINGS.get("claude_cli_binary") or "").strip()
+    if cb and os.path.sep not in cb:
+        hints.append("Shell-only aliases are not visible here — use a wrapper script or absolute path.")
+    try:
+        r = subprocess.run(
+            [exe, "--version"],
+            capture_output=True, text=True, timeout=15,
+            env=env,
+        )
+        ver = (r.stdout or r.stderr or "").strip().split("\n")[0] if r.returncode == 0 else ""
+        if r.returncode == 0:
+            return {
+                "ok": True,
+                "resolved_executable": exe,
+                "version_line": ver,
+                "effective_path_preview": (env.get("PATH") or "")[:240],
+            }
+        return {
+            "ok": False,
+            "resolved_executable": exe,
+            "error": (r.stderr or r.stdout or "")[:400],
+            "hints": hints,
+            "effective_path_preview": (env.get("PATH") or "")[:240],
+        }
+    except FileNotFoundError:
+        extra = [
+            "Add directories to cli_path_extra or use an absolute path to a real binary or wrapper script.",
+            "If the command exists only as a shell alias, resolve it with `command -v <name>` and use that path.",
+        ]
+        return {
+            "ok": False,
+            "resolved_executable": exe,
+            "error": f"Executable not found: {SETTINGS.get('claude_cli_binary', 'claude')}",
+            "hints": hints + extra,
+            "effective_path_preview": (env.get("PATH") or "")[:240],
+        }
+    except Exception as e:
+        return {"ok": False, "resolved_executable": exe, "error": str(e)[:400], "hints": hints}
+
+
+def _iter_raw_project_files(proj):
+    raw_dir = proj.raw_dir
+    if not raw_dir.exists():
+        return
+    for f in sorted(raw_dir.rglob("*")):
+        if not f.is_file():
+            continue
+        if f.name.startswith("."):
+            continue
+        if "assets" in f.parts:
+            continue
+        yield f
+
+
+def api_raw_list(project_slug=None):
+    proj = _resolve_project(project_slug)
+    raw_root = proj.raw_dir.resolve()
+    items = []
+    for f in _iter_raw_project_files(proj):
+        rel = f.relative_to(raw_root).as_posix()
+        st = f.stat()
+        items.append({"path": rel, "size": st.st_size, "mtime": int(st.st_mtime)})
+    return {"ok": True, "project": proj.slug, "items": items}
+
+
+def api_raw_read(rel_path, project_slug=None):
+    proj = _resolve_project(project_slug)
+    raw_root = proj.raw_dir.resolve()
+    rel = (rel_path or "").replace("\\", "/").strip().lstrip("/")
+    if not rel or ".." in rel.split("/"):
+        return {"ok": False, "error": "invalid path"}
+    full = (proj.raw_dir / rel).resolve()
+    try:
+        full.relative_to(raw_root)
+    except ValueError:
+        return {"ok": False, "error": "path escapes raw directory"}
+    if not full.exists():
+        return {"ok": False, "error": "not found"}
+    if not full.is_file():
+        return {"ok": False, "error": "not a file"}
+    try:
+        raw_bytes = full.read_bytes()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    try:
+        text = raw_bytes.decode("utf-8")
+        binary = False
+    except UnicodeDecodeError:
+        text = ""
+        binary = True
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "path": rel,
+        "text": text if not binary else "",
+        "binary": binary,
+        "size": len(raw_bytes),
+    }
+
+
 # ─── HTTP Handler ───
 
 class Handler(SimpleHTTPRequestHandler):
@@ -1882,6 +2557,7 @@ class Handler(SimpleHTTPRequestHandler):
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query or "")
         q_project = (qs.get("project", [""])[0] or "").strip() or None
+        qlang = (qs.get("lang", [""])[0] or "").strip()
         try:
             # 미지 slug는 조기 404
             if q_project is not None:
@@ -1901,7 +2577,7 @@ class Handler(SimpleHTTPRequestHandler):
                 out.extend({"name": n, "label": n, "folders": project_registry.recommended_folders(n)} for n in names)
                 return self._json({"ok": True, "templates": out})
             if path == "/api/wiki":
-                return self._json(build_wiki_data(q_project))
+                return self._json(build_wiki_data(q_project, ui_lang=_normalize_ui_lang(qlang)))
             if path == "/api/folders":
                 return self._json(get_folder_tree(q_project))
             if path == "/api/hash":
@@ -1923,6 +2599,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(get_strategy(proj.wiki_dir))
             if path == "/api/raw/integrity":
                 return self._json(check_raw_integrity())
+            if path == "/api/raw/list":
+                return self._json(api_raw_list(q_project))
+            if path == "/api/raw/read":
+                rp = (qs.get("path", [""])[0] or "").strip()
+                return self._json(api_raw_read(rp, q_project))
             if path == "/api/claude/diagnose":
                 return self._json(diagnose_claude())
             if path == "/api/review/list":
@@ -1930,10 +2611,12 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/settings":
                 proj = _resolve_project(q_project)
                 return self._json({
-                    "settings": SETTINGS,
+                    "settings": _settings_for_response(),
                     "project_model": proj.model if not proj.is_legacy else SETTINGS.get("model", "default"),
                     "project_slug": proj.slug,
                     "models": AVAILABLE_MODELS,
+                    "http_presets": HTTP_PRESETS,
+                    "llm_ui": _build_llm_ui(),
                 })
             if path == "/api/reflect/status":
                 last = get_last_reflect_date(project_slug=q_project)
@@ -1974,7 +2657,13 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/ingest":
                 return self._json(do_ingest(body.get("title", ""), body.get("content", ""), body.get("folder", ""), project_slug=p_slug))
             if path == "/api/query":
-                return self._json(do_query(body.get("question", ""), project_slug=p_slug))
+                return self._json(
+                    do_query(
+                        body.get("question", ""),
+                        project_slug=p_slug,
+                        lang=body.get("lang"),
+                    )
+                )
             if path == "/api/query/save":
                 return self._json(do_query_save(body.get("title", ""), body.get("content", ""), project_slug=p_slug))
             if path == "/api/lint":
@@ -2020,21 +2709,44 @@ class Handler(SimpleHTTPRequestHandler):
                     body.get("history", []),
                 ))
             if path == "/api/settings":
+                _AI_KEYS = (
+                    "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra", "ai_provider",
+                    "openai_base_url", "openai_model", "openai_api_key",
+                    "http_temperature", "http_max_tokens",
+                    "active_ai_profile", "ai_profiles",
+                )
+                if any(k in body for k in _AI_KEYS):
+                    mr = merge_dashboard_settings(body)
+                    if not mr.get("ok"):
+                        return self._json(mr, code=400)
+                if "model" not in body:
+                    return self._json({
+                        "ok": True,
+                        "settings": _settings_for_response(),
+                        "llm_ui": _build_llm_ui(),
+                    })
                 model = body.get("model", "default")
                 valid = [m["id"] for m in AVAILABLE_MODELS]
                 if model not in valid:
                     return self._json({"ok": False, "error": f"Unknown model: {model}"})
-                # 레거시: 글로벌 SETTINGS. 프로젝트 있음: active 프로젝트 .settings.json
                 proj = project_registry.get_project(p_slug)
                 if proj.is_legacy:
                     SETTINGS["model"] = model
                     _save_settings(SETTINGS)
-                    return self._json({"ok": True, "project": "", "settings": SETTINGS})
+                    return self._json({"ok": True, "project": "", "settings": _settings_for_response(), "llm_ui": _build_llm_ui()})
                 try:
                     updated = project_registry.update_project_settings(proj.slug, model=model)
-                    return self._json({"ok": True, "project": updated.slug, "model": updated.model})
+                    return self._json({
+                        "ok": True, "project": updated.slug, "model": updated.model,
+                        "settings": _settings_for_response(),
+                        "llm_ui": _build_llm_ui(),
+                    })
                 except ValueError as e:
                     return self._json({"ok": False, "error": str(e)})
+            if path == "/api/ai/test":
+                return self._json(api_ai_test_connection())
+            if path == "/api/cli/test":
+                return self._json(api_cli_test())
             if path == "/api/index/rebuild":
                 proj = project_registry.get_project(p_slug)
                 result = rebuild_index(proj.wiki_dir)
