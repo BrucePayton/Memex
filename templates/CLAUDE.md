@@ -33,8 +33,6 @@ plans/
 
 루트 `CLAUDE.md`의 Frontmatter 규칙을 그대로 따릅니다. 프로젝트별 추가 필드가 필요하면 이 파일에 명시.
 
-- (Optional) For graph labels in other UI languages, the dashboard may use `title_en` / `title_ko` / `title_zh` in addition to `title` (see root `CLAUDE.md` “Dashboard graph labels vs UI language”).
-
 ## Ingest 워크플로
 
 루트 `CLAUDE.md`의 "Ingest 워크플로"를 따릅니다.

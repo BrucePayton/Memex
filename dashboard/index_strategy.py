@@ -259,17 +259,18 @@ def rebuild_index(wiki_dir: Path) -> dict:
 
 
 def get_index_instruction(wiki_dir: Path) -> str:
-    """Index-navigation instructions embedded in LLM prompts (English)."""
+    """ingest/query/lint 프롬프트에 삽입할 인덱스 읽기 지시문"""
     strategy = get_strategy(wiki_dir)
     mode = strategy["mode"]
 
     if mode == "flat":
-        return "Read wiki/index.md first, then locate related pages."
+        return "wiki/index.md를 먼저 읽어 관련 페이지를 찾아."
     else:
-        return """Read wiki/index.md to understand structure, then open the sub-index that matches the task:
-- Sources: wiki/index-sources.md
-- Entities: wiki/index-entities.md
-- Concepts: wiki/index-concepts.md
-- Techniques: wiki/index-techniques.md
-- Analyses: wiki/index-analyses.md
-Only read the sub-indexes you need."""
+        return """wiki/index.md를 읽어 전체 구조를 파악한 뒤,
+질문과 관련된 타입의 서브 인덱스를 읽어:
+- 소스 관련: wiki/index-sources.md
+- 엔티티 관련: wiki/index-entities.md
+- 개념 관련: wiki/index-concepts.md
+- 기법 관련: wiki/index-techniques.md
+- 분석 관련: wiki/index-analyses.md
+필요한 서브 인덱스만 선택적으로 읽어."""

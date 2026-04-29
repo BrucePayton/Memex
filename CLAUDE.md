@@ -79,12 +79,6 @@ superseded_by: [[page]]   # status=superseded일 때만
 
 Filenames: lowercase, hyphens, no spaces. Examples: `transformer-architecture.md`, `openai.md`, `scaling-laws-vs-data-quality.md`.
 
-### Dashboard graph labels vs UI language
-
-- The Memex dashboard can switch interface language (`LANG`), but **graph node labels come from each page’s `title`** (and optional locale-specific fields below). They reflect **wiki/content language**, not the dashboard chrome.
-- To show localized node titles in the graph when the dashboard requests a language, you may add optional frontmatter: `title_en`, `title_ko`, `title_zh` alongside `title`. The server picks the field that matches `?lang=` on `/api/wiki` (defaults to `title`).
-- Prefer writing the primary `title` in the language you want readers to see in Obsidian and in the graph when you do not use the extra fields.
-
 ---
 
 ## Inline Citation 규칙 (필수)
