@@ -1,0 +1,306 @@
+id: flow-financial-refund-review-2025
+name: 新金科财务服务中心产险机构杂费付款审核流程
+version: '2025-03-21'
+description: 产险机构杂费付款审核业务流程，涵盖流水退款、通知单退款、退保-第三方三类场景的并行处理，统一以T日为截止时点，强调附件一致性与材料合规性。
+department: 新金科财务服务中心
+owner: 黄安琪、罗伟港
+color: blue
+chainTypeId: business
+steps:
+  - id: s-start
+    type: start
+    label: 开始
+    description: 接收产险机构提交的杂费付款申请签报，启动审核流程。
+  - id: s-task-review
+    type: task
+    label: 审核签报与附件一致性
+    description: 根据签报正文与附件内容进行一致性核对，重点检查付款人/收款人信息、金额、逻辑一致性。严禁将沟通邮件截图等非正式材料作为审批依据。
+    assignee: 中心会计
+    sla: T日
+    systems:
+      - name: OA签报系统
+        type: oa
+        purpose: 用于签报流转与审批，接收产险机构提交的杂费付款申请签报，启动审核流程。
+        key_deadlines:
+          - event: T日
+            deadline: T日
+    tools:
+      - name: OA签报系统
+        type: document
+        purpose: 接收并审核产险机构提交的杂费付款申请签报，核对签报正文与附件内容的一致性。
+        category: document
+      - name: 涉密文件加密提示
+        type: communication
+        purpose: 提醒审批人员上传的附件为涉密文件，自动加密后仅可查看，禁止复制、保存、打印。
+        category: communication
+    risks:
+      - step_id: s-task-review
+        description: 未明确附件与签报内容的比对方式，易因主观判断导致数据错漏。
+        level: medium
+        impact: 审批结果错误，引发资金支付偏差或流程返工。
+        mitigation: 建立标准化核对清单，系统自动标记不一致项。
+        source: 严禁将沟通邮件截图等非正式材料作为审批依据。
+      - step_id: s-task-review
+        description: 未定义如何识别违规上传的沟通邮件截图，存在误审风险。
+        level: high
+        impact: 错误批准含无效材料的签报，导致合规性失效。
+        mitigation: 系统设置文件类型拦截规则，禁止上传非标准格式附件。
+        source: 严禁将沟通邮件以任何形式（如：截图、照片、文档等）上传至签报中作为审批依据。
+      - step_id: s-task-third-party-refund
+        description: 未提供完整证明材料（如死亡证明+直系亲属证明）时仍可提交，易致支付错误。
+        level: high
+        impact: 资金支付至错误账户，引发财务损失与法律纠纷。
+        mitigation: 系统强制校验关键材料完整性，缺项则无法提交审批。
+        source: 《死亡证明》需和直系亲属证明共同出具。
+  - id: s-fork-payment-type
+    type: parallel-fork
+    label: 按付款类型分路
+    description: 根据付款类型（流水退款、通知单退款、退保-第三方）进行流程分流，支持三类并行处理。
+  - id: s-task-stream-refund
+    type: task
+    label: 流水退款审核
+    description: 流水退款：要求同名原路退回，需提供退款申请书；核验签报正文与附件中付款人/账号、金额的一致性；单位客户需加盖公章，个人客户需亲笔签字；申请人证照（营业执照/身份证）为非必要附件。
+    assignee: 中心会计
+    sla: T日
+    tools:
+      - name: 退款申请书
+        type: document
+        purpose: 用于验证流水退款场景中单位客户加盖公章或个人客户亲笔签字的退款请求，确保信息与签报一致。
+        category: document
+      - name: 营业执照影像件
+        type: document
+        purpose: 非必要附件，用于单位客户退款时提供证明材料，确保收款人名称与公章一致。
+        category: document
+      - name: 身份证正反面影像件
+        type: document
+        purpose: 非必要附件，用于个人客户退款时提供身份证明，确保收款人姓名与签字一致。
+        category: document
+  - id: s-task-notification-refund
+    type: task
+    label: 通知单退款审核
+    description: 通知单退款：同名原路退回，需提供退款申请书；核验签报正文与附件中付款人/账号、金额的一致性；单位客户需加盖公章，个人客户需亲笔签字；若投保人名字错误，需补充保单抄件及身份证明；申请人证照为非必要附件。
+    assignee: 中心会计
+    sla: T日
+    tools:
+      - name: 退款申请书
+        type: document
+        purpose: 用于通知单退款场景中单位客户加盖公章或个人客户亲笔签字的退款请求，确保信息与签报一致。
+        category: document
+      - name: 保单抄件及身份证明
+        type: document
+        purpose: 当投保人名字错误时，补充提供以确认实际付款人身份，保障退款准确性。
+        category: document
+      - name: 营业执照影像件
+        type: document
+        purpose: 非必要附件，用于单位客户退款时提供证明材料，确保收款人名称与公章一致。
+        category: document
+      - name: 身份证正反面影像件
+        type: document
+        purpose: 非必要附件，用于个人客户退款时提供身份证明，确保收款人姓名与签字一致。
+        category: document
+  - id: s-task-third-party-refund
+    type: task
+    label: 退保-第三方审核
+    description: >-
+      退保-第三方：适用于实际收款人非投保人场景，如个体工商户法人、自然人独资、死亡、上下级公司等。需提供授权书（注明姓名、卡号、金额、用印）、批改前后变动对比页、退费清单明细、情况说明；若为个体户或自然人独资，需提供营业执照；POS刷卡需持卡人签字小票；无卡支付需银行账单；微信/支付宝付款需支付证明（含客户名称、身份证号、印章）。中心是个体工商户，无对公账户，现申请退费到法人，需特别说明。
+    assignee: 中心会计
+    sla: T日
+    systems:
+      - name: 新一代保单服务系统
+        type: custom
+        purpose: 来源：退保-第三方申请，提供批改前后变动对比页、退费清单明细等材料。
+        key_deadlines:
+          - event: T日
+            deadline: T日
+      - name: 新一代团体批改系统
+        type: custom
+        purpose: 来源：退保-第三方申请，提供批改前后变动对比页、退费清单明细等材料。
+        key_deadlines:
+          - event: T日
+            deadline: T日
+      - name: EOA
+        type: custom
+        purpose: 用于审批链管理，含机构审批链配置；需机构协助将新中心人员添加至审批链。
+        key_deadlines:
+          - event: T日
+            deadline: T日
+      - name: 产险财务系统
+        type: custom
+        purpose: 当前为过渡期，4月中旬将迁移至大财务超新星系统资金支付模块，目前仍用于流水退款、通知单退款的杂费付款复核。
+        key_deadlines:
+          - event: T日
+            deadline: T日
+    tools:
+      - name: 授权书
+        type: document
+        purpose: 明确实际收款人信息（姓名、卡号、金额）并由投保人用印，作为退保-第三方场景的核心法律依据。
+        category: document
+      - name: 批改前后变动对比页
+        type: document
+        purpose: 用于核对退保操作前后的变更内容，确保签报描述与系统记录一致。
+        category: document
+      - name: 退费清单明细
+        type: document
+        purpose: 列明每笔退款金额，用于与签报正文及退款申请书金额比对，确保一致性。
+        category: document
+      - name: 情况说明
+        type: document
+        purpose: 解释特殊退款原因（如中心为个体工商户无对公账户，申请退至法人），辅助审批判断合理性。
+        category: document
+      - name: 营业执照
+        type: document
+        purpose: 若为个体户或自然人独资，需提供营业执照以证明主体资格。
+        category: document
+      - name: POS刷卡小票
+        type: document
+        purpose: 持卡人签字的小票，用于验证POS刷卡支付方式下的实际付款人身份。
+        category: document
+      - name: 银行账单
+        type: document
+        purpose: 无卡支付场景下，提供交易日期、金额和卡号（部分可见）的证明材料。
+        category: document
+      - name: 微信/支付宝支付证明
+        type: document
+        purpose: 用于零钱、余额宝、花呗等非银行卡支付方式，需包含客户名称、身份证号、平台印章。
+        category: document
+      - name: 银行冻结证明
+        type: document
+        purpose: 在账户冻结情况下，用于支持退费至法人或其他第三方的合理性说明。
+        category: document
+      - name: 死亡证明
+        type: document
+        purpose: 投保人死亡时，用于证明直系亲属关系并支持退费至其账户。
+        category: document
+      - name: 结婚证
+        type: document
+        purpose: 不可单独作为依据，需与其他材料共同使用以证明亲属关系。
+        category: document
+      - name: 工商变更证明
+        type: document
+        purpose: 单位名称变更时，提供市场监管部门盖章的变更信息表，用于支持退至新账户。
+        category: document
+      - name: 刑事拘留通知书或判决书
+        type: document
+        purpose: 投保人入狱且无法提供冻结证明时，用于佐证账户异常状态。
+        category: document
+      - name: 上下级隶属关系说明
+        type: document
+        purpose: 用于证明上下级公司之间的委托关系，需加盖公章。
+        category: document
+      - name: 合作协议
+        type: document
+        purpose: 平台代收代付场景下，需提供合作协议及财管室已审批签报证明。
+        category: document
+    risks:
+      - step_id: s-task-third-party-refund
+        description: 微信/支付宝支付证明格式不统一，人工校验困难，易遗漏关键信息。
+        level: medium
+        impact: 无法确认付款人身份，增加欺诈风险。
+        mitigation: 制定统一模板并要求上传带客户名称、身份证号、印章的证明文件。
+        source: 微信零钱付款还需提供支付证明（我的—钱包—账单—常见问题—下载账单—用做证明材料），材料必须有客户名称、身份证号、微信印章。
+      - step_id: s-task-third-party-refund
+        description: 个体工商户无对公账户退费至法人，未明确说明流程与责任归属。
+        level: medium
+        impact: 审批依据不足，可能被退回或引发后续争议。
+        mitigation: 在签报中增加专项说明字段，并由会计复核确认合理性。
+        source: 中心是个体工商户，无对公账户，现申请退费到法人，需特别说明。
+      - step_id: s-task-third-party-refund
+        description: 授权书未明确是否需公证，存在法律效力争议风险。
+        level: medium
+        impact: 支付后若发生纠纷，难以追责，影响审计合规性。
+        mitigation: 要求授权书加盖公章或经公证，系统记录存档。
+        source: 授权书中要注明收款人的姓名、银行卡号、金额，还需用印。
+  - id: s-join
+    type: parallel-join
+    label: 并行流程汇聚
+    description: 三类退款流程完成后，汇聚至统一节点，准备进入最终审批链闭环。
+  - id: s-submit-or-return
+    type: task
+    label: 提交或退回审批
+    description: 根据各分支审核结果出具审批意见，决定提交至EQA审批链或退回签报。
+    assignee: 中心会计
+    sla: T日
+    risks:
+      - step_id: s-submit-or-return
+        description: 未规定T日超时处理机制，可能导致流程停滞或延误。
+        level: high
+        impact: 任务无法按时完成，影响整体结算周期。
+        mitigation: 设定自动提醒与超时预警机制，逾期默认退回并通知负责人。
+        source: 第3.2节‘T日’为作业截止时点；‘严禁将沟通邮件以任何形式上传至签报中作为审批依据’
+      - step_id: s-submit-or-return
+        description: 审批链配置依赖机构协助添加人员，但未明确责任方与确认流程。
+        level: high
+        impact: 审批链缺失或失效，导致流程无法推进。
+        mitigation: 建立审批链配置确认表，由产险机构负责人签字回传备案。
+        source: 需机构协助将新中心人员添加至审批链：流水退款、通知单退款：协助在超新星-机构审批链管理模块配置...
+      - step_id: s-submit-or-return
+        description: 并行分支审核结果未强制汇总验证，存在部分分支遗漏风险。
+        level: medium
+        impact: 流程闭环前遗漏某类退款审核，造成审批不完整。
+        mitigation: 系统设置并行节点汇合检查，所有分支完成后方可进入下一环节。
+        source: 三类退款流程完成后，汇聚至统一节点，准备进入最终审批链闭环。
+  - id: s-end
+    type: end
+    label: 结束
+    description: 流程结束，归档签报及相关材料。
+edges:
+  - id: e0
+    source: s-start
+    target: s-task-review
+    label: 开始
+    type: default
+    animated: false
+  - id: e1
+    source: s-task-review
+    target: s-fork-payment-type
+    label: 按付款类型分路
+    type: default
+    animated: false
+  - id: e2
+    source: s-fork-payment-type
+    target: s-task-stream-refund
+    label: 并行分支：流水退款
+    type: default
+    animated: false
+  - id: e3
+    source: s-fork-payment-type
+    target: s-task-notification-refund
+    label: 并行分支：通知单退款
+    type: default
+    animated: false
+  - id: e4
+    source: s-fork-payment-type
+    target: s-task-third-party-refund
+    label: 并行分支：退保-第三方
+    type: default
+    animated: false
+  - id: e5
+    source: s-task-stream-refund
+    target: s-join
+    label: 流水退款完成
+    type: default
+    animated: false
+  - id: e6
+    source: s-task-notification-refund
+    target: s-join
+    label: 通知单退款完成
+    type: default
+    animated: false
+  - id: e7
+    source: s-task-third-party-refund
+    target: s-join
+    label: 退保-第三方完成
+    type: default
+    animated: false
+  - id: e8
+    source: s-join
+    target: s-submit-or-return
+    label: 汇聚后进入审批闭环
+    type: default
+    animated: false
+  - id: e9
+    source: s-submit-or-return
+    target: s-end
+    label: 提交或退回
+    type: default
+    animated: false

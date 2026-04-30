@@ -1,0 +1,118 @@
+id: example_data_pipeline
+name: 用户行为数据处理管道
+version: v1.0
+description: 实时采集用户行为事件，经清洗转换后写入数仓，驱动用户画像与推荐系统
+chainTypeId: data
+steps:
+  - id: d1
+    type: ds_source
+    label: Kafka 事件流
+    position:
+      x: 60
+      'y': 200
+    description: 用户点击/浏览/购买实时事件
+    metadata:
+      data_type: 流式数据
+  - id: d2
+    type: ds_extract
+    label: 事件解析
+    position:
+      x: 260
+      'y': 200
+    description: 解析Avro/JSON消息格式
+    metadata:
+      source_tables:
+        - user_click_log
+        - purchase_event
+  - id: d3
+    type: ds_clean
+    label: 数据清洗
+    position:
+      x: 460
+      'y': 200
+    description: 去重、补全、格式标准化
+    metadata:
+      quality_rules:
+        - 非空校验
+        - ID唯一性
+        - 时间戳合法性
+  - id: d4
+    type: ds_transform
+    label: 特征工程
+    position:
+      x: 660
+      'y': 200
+    description: 计算用户行为特征
+    metadata:
+      transform_logic: 计算停留时长/点击率/购买转化率等特征
+  - id: d5
+    type: ds_validate
+    label: 质量门禁
+    position:
+      x: 760
+      'y': 360
+    description: 数据质量是否达标
+  - id: d6
+    type: ds_aggregate
+    label: 指标聚合
+    position:
+      x: 960
+      'y': 200
+    description: 按用户/商品/渠道聚合
+    metadata:
+      latency_sla: <5min实时聚合
+  - id: d7
+    type: ds_load
+    label: 写入数仓
+    position:
+      x: 1160
+      'y': 200
+    description: 写入 ClickHouse 用户画像表
+    metadata:
+      target_tables:
+        - dw_user_profile
+        - dw_item_stats
+  - id: d8
+    type: ds_monitor
+    label: 质量监控
+    position:
+      x: 1160
+      'y': 360
+    description: 监控数据漂移与异常告警
+  - id: d9
+    type: ds_output
+    label: 完成
+    position:
+      x: 1360
+      'y': 280
+    description: 数据就绪，通知下游系统
+edges:
+  - id: e1
+    source: d1
+    target: d2
+  - id: e2
+    source: d2
+    target: d3
+  - id: e3
+    source: d3
+    target: d4
+  - id: e4
+    source: d4
+    target: d5
+  - id: e5
+    source: d5
+    target: d6
+    label: 质量通过
+  - id: e6
+    source: d5
+    target: d3
+    label: 重新清洗
+  - id: e7
+    source: d6
+    target: d7
+  - id: e8
+    source: d7
+    target: d8
+  - id: e9
+    source: d7
+    target: d9

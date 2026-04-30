@@ -1,0 +1,288 @@
+id: flow-supplier-payment-001
+name: 供应商付款流程
+version: v3.1
+description: 企业对供应商的发票核验、合同比对、三方审核及银行付款全流程
+department: 采购部
+owner: COO
+createdAt: '2023-11-10'
+updatedAt: '2025-02-14'
+color: '#10b981'
+steps:
+  - id: sp-start
+    type: start
+    label: 流程开始
+    position:
+      x: 60
+      'y': 240
+  - id: sp-s1
+    type: task
+    label: 接收供应商发票
+    description: 采购专员收取纸质或电子发票并录入系统
+    assignee: 采购专员
+    duration: 30分钟
+    systems:
+      - name: ERP系统
+        type: erp
+      - name: 电子发票平台
+        type: custom
+    databases:
+      - name: invoice_db
+        type: mysql
+        operation: write
+      - name: vendor_db
+        type: mysql
+        operation: read
+    tools:
+      - name: 发票OCR识别
+        purpose: 自动提取发票信息
+        category: automation
+      - name: 增值税发票验真
+        purpose: 税务系统验真
+        category: automation
+    risks:
+      - description: 虚假发票混入
+        level: high
+        impact: 税务合规风险 + 资金损失
+        mitigation: 税务系统实时验真比对
+      - description: 发票信息录入错误
+        level: low
+        mitigation: OCR自动填写 + 人工复核
+    position:
+      x: 210
+      'y': 200
+  - id: sp-s2
+    type: task
+    label: 合同核对
+    description: 核对发票金额与合同约定是否一致
+    assignee: 采购专员
+    duration: 1小时
+    systems:
+      - name: 合同管理系统
+        type: custom
+      - name: ERP系统
+        type: erp
+    databases:
+      - name: contract_db
+        type: postgresql
+        operation: read
+      - name: invoice_db
+        type: mysql
+        operation: readwrite
+    tools:
+      - name: 合同AI比对工具
+        purpose: 自动对比关键条款
+        category: automation
+    risks:
+      - description: 合同条款理解歧义
+        level: medium
+        mitigation: 争议条款人工会审
+      - description: 合同版本不是最新版
+        level: medium
+        mitigation: 合同系统锁定正式版本
+    position:
+      x: 440
+      'y': 200
+  - id: sp-s3
+    type: task
+    label: 三方核验
+    description: 采购、财务、业务部门三方联合核验
+    assignee: 三方核验组
+    duration: 1-2个工作日
+    sla: 48小时内完成
+    systems:
+      - name: OA审批系统
+        type: oa
+      - name: ERP系统
+        type: erp
+    databases:
+      - name: approval_db
+        type: postgresql
+        operation: write
+      - name: audit_log
+        type: mysql
+        operation: write
+    tools:
+      - name: 钉钉审批
+        purpose: 移动端三方会签
+        category: collaboration
+      - name: 企业微信
+        purpose: 协商沟通
+        category: collaboration
+    risks:
+      - description: 三方核验不及时拖延付款
+        level: medium
+        impact: 供应商关系受损
+        mitigation: 超时自动催办 + 升级机制
+      - description: 实际收货与发票不符
+        level: high
+        mitigation: 扫码核验入库单
+    position:
+      x: 670
+      'y': 200
+  - id: sp-g1
+    type: gateway
+    label: 核验结果
+    description: 判断三方核验是否通过
+    position:
+      x: 910
+      'y': 220
+  - id: sp-s4
+    type: task
+    label: 退回重开发票
+    description: 通知供应商退回发票并重新开具
+    assignee: 采购专员
+    duration: 3-5个工作日
+    systems:
+      - name: 供应商门户
+        type: custom
+    databases:
+      - name: vendor_db
+        type: mysql
+        operation: readwrite
+    tools:
+      - name: 邮件系统
+        purpose: 正式退票通知
+        category: collaboration
+    risks:
+      - description: 供应商不配合退票
+        level: high
+        impact: 付款周期大幅延误
+        mitigation: 合同条款约束退票时限
+    position:
+      x: 910
+      'y': 380
+  - id: sp-s5
+    type: task
+    label: 财务审批付款
+    description: 财务负责人审批付款申请
+    assignee: 财务总监
+    duration: 4小时
+    sla: 当天审批
+    systems:
+      - name: ERP系统
+        type: erp
+      - name: OA审批系统
+        type: oa
+    databases:
+      - name: payment_db
+        type: mysql
+        operation: write
+      - name: approval_db
+        type: postgresql
+        operation: readwrite
+    tools:
+      - name: 资金预测工具
+        purpose: 查看现金流影响
+        category: analytics
+    risks:
+      - description: 付款时间错误导致现金流紧张
+        level: medium
+        mitigation: 资金计划与付款排期联动
+    position:
+      x: 1110
+      'y': 200
+  - id: sp-s6
+    type: service
+    label: 银行付款
+    description: 系统发起对公银行转账
+    assignee: 系统自动
+    duration: T+1个工作日
+    systems:
+      - name: 银行直连系统
+        type: custom
+      - name: ERP系统
+        type: erp
+    databases:
+      - name: payment_db
+        type: mysql
+        operation: write
+      - name: bank_statement
+        type: oracle
+        operation: write
+    tools:
+      - name: 财资管理平台
+        purpose: 支付指令管控
+        category: automation
+    risks:
+      - description: 银行账号信息填写错误
+        level: high
+        impact: 资金打入错误账户
+        mitigation: 账号白名单 + 二次确认
+      - description: 银行通道故障
+        level: medium
+        mitigation: 多通道备份 + 失败告警
+    position:
+      x: 1310
+      'y': 200
+  - id: sp-s7
+    type: service
+    label: 记账与归档
+    description: 自动生成会计凭证并归档电子发票
+    assignee: 系统自动
+    duration: 自动
+    systems:
+      - name: ERP系统
+        type: erp
+      - name: 档案管理系统
+        type: custom
+    databases:
+      - name: accounting_db
+        type: oracle
+        operation: write
+      - name: archive_db
+        type: mongodb
+        operation: write
+    tools:
+      - name: 智能记账机器人
+        purpose: 自动分录生成
+        category: automation
+    risks:
+      - description: 会计科目映射错误
+        level: medium
+        mitigation: 规则表定期人工校验
+    position:
+      x: 1510
+      'y': 200
+  - id: sp-end
+    type: end
+    label: 流程结束
+    position:
+      x: 1710
+      'y': 240
+edges:
+  - id: spe1
+    source: sp-start
+    target: sp-s1
+  - id: spe2
+    source: sp-s1
+    target: sp-s2
+  - id: spe3
+    source: sp-s2
+    target: sp-s3
+  - id: spe4
+    source: sp-s3
+    target: sp-g1
+  - id: spe5
+    source: sp-g1
+    target: sp-s5
+    label: 通过
+    type: conditional
+  - id: spe6
+    source: sp-g1
+    target: sp-s4
+    label: 不通过
+    type: conditional
+  - id: spe7
+    source: sp-s4
+    target: sp-s1
+    label: 重新受理
+    animated: true
+  - id: spe8
+    source: sp-s5
+    target: sp-s6
+  - id: spe9
+    source: sp-s6
+    target: sp-s7
+  - id: spe10
+    source: sp-s7
+    target: sp-end

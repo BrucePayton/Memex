@@ -8,7 +8,7 @@
       "description": "专门用来跟踪中国国内会计准则",
       "model": "default",
       "created": "2026-04-28",
-      "last_used": "2026-04-28",
+      "last_used": "2026-04-30",
       "template": "llm-research"
     },
     {
@@ -21,12 +21,21 @@
       "template": "llm-research"
     },
     {
+      "slug": "个人文档中心",
+      "title": "个人文档中心",
+      "description": "整理并维护Downloads目录中的各类文档，包括财务报告、知识库建设、AI智能体分析、业务流程等",
+      "model": "default",
+      "created": "2026-04-29",
+      "last_used": "2026-04-30",
+      "template": "llm-research"
+    },
+    {
       "slug": "个人开发备注日记",
       "title": "个人开发备注日记",
       "description": "专门用来维护个人日常的开发日志信息",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-04-29",
+      "last_used": "2026-04-30",
       "template": "personal-notes"
     }
   ]

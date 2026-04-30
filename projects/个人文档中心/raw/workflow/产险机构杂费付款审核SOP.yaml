@@ -1,0 +1,404 @@
+id: flow-claim-approval-sop-v3
+name: 产险机构杂费付款审核SOP
+version: V3
+description: 产险机构杂费付款审核流程，涵盖流水退款、退第三方、共保保费支付等多类型处理，依据SLA要求在2H内完成审核，涉及并行处理与条件分支。
+department: 产险机构杂费付款审核SOP
+owner: 新金科财务服务中心
+color: blue
+chainTypeId: business
+steps:
+  - id: s-start
+    type: start
+    label: 接收待办签报
+  - id: s-task-review
+    type: task
+    label: 审核签报内容与附件一致性
+    description: 根据付款性质和签报、附件内容进行待办签报审核，核对信息一致性。所有流程以OA审批为统一入口。
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于审批签报，作为杂费付款审核的统一入口，涉及模块为EOA，需机构协助将中心人员添加至审批链。
+        key_deadlines:
+          - event: 审核开始
+            deadline: 2H以内
+    tools:
+      - name: 退款申请书模板
+        type: document
+        purpose: 用于非原卡退回但同主体的退款场景，确保企业盖章或个人签字，并体现签报中账户信息。
+        category: document
+      - name: 授权委托书模板
+        type: document
+        purpose: 用于退第三方场景，明确收款人姓名、账号、金额及用印要求，满足合规与支付凭证一致性。
+        category: document
+      - name: 共保支付模板
+        type: document
+        purpose: 确保共保保费支付金额与签报一致，作为附件提交，无需发票和核销截图。
+        category: document
+      - name: 入账截图
+        type: document
+        purpose: 验证车船税等资金支付的科目一致性，防止入账错误。
+        category: document
+      - name: 支付凭证
+        type: document
+        purpose: 包含支付日期、卡号等关键信息，用于退第三方及退保场景的核对。
+        category: document
+      - name: 微信/支付宝账单
+        type: document
+        purpose: 作为零钱或余额付款的证明材料，需包含客户名称、身份证号、平台印章。
+        category: document
+      - name: POS刷卡小票
+        type: document
+        purpose: 用于无卡支付场景，需持卡人签字以确认交易真实性。
+        category: document
+      - name: 沟通邮件
+        type: communication
+        purpose: 仅作参考用途，禁止上传至签报中作为审批依据。
+        category: communication
+      - name: 税务岗答复邮件
+        type: communication
+        purpose: 用于增值税补退税场景，证明税务岗已开具退税通知单。
+        category: communication
+    risks:
+      - step_id: s-task-review
+        description: 未核对签报与附件信息一致性，导致资金错付或退回
+        level: high
+        impact: 资金支付错误或流程停滞
+        mitigation: 增加双人复核机制，系统自动比对关键字段
+        source: 根据付款性质和签报、附件内容进行待办签报审核
+      - step_id: s-branch-refund-third-party
+        description: 金额≥1万未咨询合规马辰轩，违反合规要求
+        level: high
+        impact: 合规风险暴露，可能被监管处罚
+        mitigation: 系统设置金额阈值提醒并强制跳转至咨询流程
+        condition_counterexample: 金额为10,000元时未触发咨询，直接审批通过
+      - step_id: s-branch-co-insurance-payment
+        description: 2026年1月起未咨询赵旭老师，导致流程失控
+        level: high
+        impact: 流程无法推进，影响资金支付时效
+        mitigation: 系统在2026年1月后自动拦截未咨询记录
+        condition_counterexample: 2026年1月后签报未上传咨询记录即提交
+  - id: s-fork-payment-type
+    type: parallel-fork
+    label: 并行分发付款类型处理
+    description: 并行处理各付款类型：流水退款、退第三方、共保保费支付、保证金支付、安抚基金、通知单退款、互联网二期、理赔款、安责险费等。
+  - id: s-branch-refund-stream
+    type: task
+    label: 流水退款
+    description: 原卡原退：无附件要求，核对收付款人名称、账号、金额一致；非原卡退回但同主体：需提供退款申请书（企业盖章/个人签字）、营业执照或身份证；现金缴款需上传现金缴款单、身份证和收款银行卡；禁止指定账户支付，有则直接退回。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 作为流水退款审批的统一入口，核对收付款人名称、账号、金额一致性，支持原卡原退及非原卡退回但同主体的处理。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+  - id: s-branch-refund-third-party
+    type: task
+    label: 退第三方
+    description: 附件：收款人身份证/营业执照、授权委托书、支付凭证（含支付日期、卡号）；若金额≥1万，需咨询合规马辰轩；支付日期3月1日后，需在授权委托书中体现‘非保险销售人员’身份，否则需咨询经办人核实。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于退第三方付款申请的审批，核对收款人身份证/营业执照、授权委托书、支付凭证等附件内容。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+  - id: s-branch-co-insurance-payment
+    type: task
+    label: 共保保费支付
+    description: >-
+      附件：用印共保协议、保单号；共保保费退给共保方，使用2149340001/2121900000科目退款；21219科目用于退其他预收保费事项；2026年1月起需咨询赵旭老师；金额≥1万需咨询合规马辰轩；共保支付模板金额须与签报一致；无需发票和发票核销截图。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于共保保费支付签报的审批，需上传用印共保协议、保单号及共保支付模板，并在2026年1月后咨询赵旭老师。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+      - name: 共保平台
+        type: custom
+        purpose: 用于发起共保保费支付的专用系统，通常用于退共保方或走退其他预收保费流程。
+        key_deadlines:
+          - event: 支付发起
+            deadline: 2026年1月起需咨询赵旭老师
+  - id: s-branch-security-deposit
+    type: task
+    label: 保证金支付
+    description: 附件：OA签报、招标公告/合同协议；核对账号、金额、收款人等信息与签报一致；如不一致，需补充收款信息来源证明、支付明细表；关注清理日期、是否指定账户支付及招标文件要求。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于保证金支付签报的审批，核对OA签报、招标公告/合同协议等信息与实际支付一致。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+    risks:
+      - step_id: s-branch-security-deposit
+        description: 收款信息不一致但未要求补充证明，存在支付风险
+        level: medium
+        impact: 资金支付给错误主体，造成损失
+        mitigation: 系统自动检测差异并强制要求补充来源证明
+        source: 如不一致，需补充收款信息来源证明、支付明细表
+      - step_id: s-branch-claim
+        description: 理赔款参照流水退款规则，但未明确执行标准，易出错
+        level: medium
+        impact: 处理标准不一，导致退款异常
+        mitigation: 统一制定理赔款处理SOP并嵌入系统规则
+        source: 大类参照流水退款
+  - id: s-branch-compassion-fund
+    type: task
+    label: 安抚基金、生育基金
+    description: 2026年1月起取消咨询，明确签报中上传附件即可；附件：OA签报、收款人身份证。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于安抚基金、生育基金签报的审批，要求上传OA签报和收款人身份证，2026年1月起取消咨询。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+    risks:
+      - step_id: s-branch-compassion-fund
+        description: 2026年1月后未上传完整附件，无法追溯审批依据
+        level: medium
+        impact: 审计无法验证审批完整性，责任不清
+        mitigation: 系统强制校验附件上传状态，缺失则禁止提交
+        condition_counterexample: 2026年1月后仅上传签报，未附身份证
+      - step_id: s-branch-notification-refund
+        description: 车船税退税未核实入账科目一致性，造成跨期错误
+        level: medium
+        impact: 财务账务错误，影响税务申报
+        mitigation: 增加三级机构财务确认环节，系统自动比对科目
+        source: 确保入账和新资金支付的科目一致性
+  - id: s-branch-notification-refund
+    type: task
+    label: 通知单退款
+    description: 附件：退款申请书和营业执照；车船税需上传入账截图以确保科目一致性；增值税补退税需批单、红字、单位/个人证照；企业宝退款需完整沟通邮件和营业执照；批改系统发起的通知单退款可直接审批。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于通知单退款签报的审批，核对退款申请书、营业执照、入账截图等附件，确保科目一致性。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+      - name: 批改系统
+        type: custom
+        purpose: 用于发起通知单退款（含保费退款）的系统，若由其发起则可直接审批，无需额外审核。
+        key_deadlines:
+          - event: 审批通过
+            deadline: 无明确SLA，可直接审批
+  - id: s-branch-internet-phase2
+    type: task
+    label: 互联网二期
+    description: 退保：附件包括保单、核保同意邮件/退保签报（退第三方还需合规同意邮件+支付凭证+收款人身份证）；手续费支付：OA签报、支付明细表、协议；2026年1月起蚂蚁手续费支付需咨询赵旭老师。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于互联网二期退保及手续费支付签报的审批，需核对保单、核保同意邮件、合规同意邮件、支付凭证等。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+      - name: 蚂蚁手续费支付系统
+        type: custom
+        purpose: 用于蚂蚁手续费支付的系统，2026年1月起需咨询赵旭老师。
+        key_deadlines:
+          - event: 支付前确认
+            deadline: 2026年1月起需咨询赵旭老师
+    risks:
+      - step_id: s-branch-internet-phase2
+        description: 蚂蚁手续费支付未咨询赵旭老师，流程违规
+        level: high
+        impact: 审批无效，资金支付失败
+        mitigation: 系统在2026年1月后对蚂蚁类支付强制要求咨询
+        condition_counterexample: 2026年1月后蚂蚁手续费支付未咨询赵旭即审批
+      - step_id: s-branch-accident-insurance
+        description: 杭州安责险费未咨询丁宇，导致支付错误
+        level: medium
+        impact: 支付对象或账户错误，引发资金损失
+        mitigation: 系统绑定区域与责任人，自动提示咨询
+        source: 杭州地区支付安责险费用需咨询丁宇（DINGYU003）
+  - id: s-branch-claim
+    type: task
+    label: 理赔款
+    description: 大类参照流水退款；原卡原退或非原卡退回但同主体需按对应规则处理。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于理赔款支付签报的审批，大类参照流水退款规则进行处理。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+  - id: s-branch-accident-insurance
+    type: task
+    label: 安责险费
+    description: 杭州地区支付安责险费用需咨询丁宇（DINGYU003）；安责险服务费使用指定监管账户（5555建行账户，仅限杭州）。
+    duration: 2H
+    sla: 2H以内
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于安责险费用支付签报的审批，需咨询丁宇（DINGYU003），并核对金额和账号。
+        key_deadlines:
+          - event: 审核完成
+            deadline: 2H以内
+      - name: 5555建行监管账户
+        type: custom
+        purpose: 用于杭州地区安责险服务费的指定监管账户支付，仅限杭州使用。
+        key_deadlines:
+          - event: 资金支付
+            deadline: 仅限杭州地区使用
+  - id: s-branch-monthly-close
+    type: task
+    label: 月结截止资金支付
+    description: 统一回复‘月结处理中，支付系统已关账，签报请归档，待下月开账后重起，谢谢’，然后退回签报。
+    systems:
+      - name: EOA
+        type: oa
+        purpose: 用于月结截止资金支付签报的处理，统一回复并退回签报，待下月开账后重起。
+        key_deadlines:
+          - event: 签报退回
+            deadline: 支付系统已关账
+    risks:
+      - step_id: s-branch-monthly-close
+        description: 系统关账后仍重起签报，影响下月账务开账
+        level: high
+        impact: 账务周期混乱，影响报表生成
+        mitigation: 系统自动识别关账状态并锁定重起操作
+        source: 支付系统已关账，签报请归档，待下月开账后重起
+  - id: s-join
+    type: parallel-join
+    label: 并行处理结果汇聚
+    description: 汇聚所有并行支线的处理结果，进入最终提交或退回决策。
+    risks:
+      - step_id: s-join
+        description: 并行支线未汇合，导致任务状态不一致
+        level: medium
+        impact: 流程状态模糊，影响整体进度追踪
+        mitigation: 系统强制所有支线完成后再进入汇合节点
+        source: 汇聚所有并行支线的处理结果，进入最终提交或退回决策
+  - id: s-end
+    type: end
+    label: 流程结束
+    description: 流程结束，签报已提交或退回。
+edges:
+  - id: e0
+    source: s-start
+    target: s-task-review
+    type: default
+    animated: false
+  - id: e1
+    source: s-task-review
+    target: s-fork-payment-type
+    type: default
+    animated: false
+  - id: e2
+    source: s-fork-payment-type
+    target: s-branch-refund-stream
+    type: default
+    animated: false
+  - id: e3
+    source: s-fork-payment-type
+    target: s-branch-refund-third-party
+    type: default
+    animated: false
+  - id: e4
+    source: s-fork-payment-type
+    target: s-branch-co-insurance-payment
+    type: default
+    animated: false
+  - id: e5
+    source: s-fork-payment-type
+    target: s-branch-security-deposit
+    type: default
+    animated: false
+  - id: e6
+    source: s-fork-payment-type
+    target: s-branch-compassion-fund
+    type: default
+    animated: false
+  - id: e7
+    source: s-fork-payment-type
+    target: s-branch-notification-refund
+    type: default
+    animated: false
+  - id: e8
+    source: s-fork-payment-type
+    target: s-branch-internet-phase2
+    type: default
+    animated: false
+  - id: e9
+    source: s-fork-payment-type
+    target: s-branch-claim
+    type: default
+    animated: false
+  - id: e10
+    source: s-fork-payment-type
+    target: s-branch-accident-insurance
+    type: default
+    animated: false
+  - id: e11
+    source: s-branch-refund-stream
+    target: s-join
+    type: default
+    animated: false
+  - id: e12
+    source: s-branch-refund-third-party
+    target: s-join
+    type: default
+    animated: false
+  - id: e13
+    source: s-branch-co-insurance-payment
+    target: s-join
+    type: default
+    animated: false
+  - id: e14
+    source: s-branch-security-deposit
+    target: s-join
+    type: default
+    animated: false
+  - id: e15
+    source: s-branch-compassion-fund
+    target: s-join
+    type: default
+    animated: false
+  - id: e16
+    source: s-branch-notification-refund
+    target: s-join
+    type: default
+    animated: false
+  - id: e17
+    source: s-branch-internet-phase2
+    target: s-join
+    type: default
+    animated: false
+  - id: e18
+    source: s-branch-claim
+    target: s-join
+    type: default
+    animated: false
+  - id: e19
+    source: s-branch-accident-insurance
+    target: s-join
+    type: default
+    animated: false
+  - id: e20
+    source: s-join
+    target: s-end
+    type: default
+    animated: false

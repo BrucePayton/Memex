@@ -1,0 +1,101 @@
+id: example_knowledge_rag
+name: 智能客服 RAG 知识问答
+version: v1.0
+description: 基于检索增强生成（RAG）的企业客服知识库问答流程
+chainTypeId: knowledge
+steps:
+  - id: s1
+    type: kb_input
+    label: 用户提问
+    position:
+      x: 60
+      'y': 200
+    description: 接收用户自然语言问题
+  - id: s2
+    type: kb_parse
+    label: 意图解析
+    position:
+      x: 240
+      'y': 200
+    description: NLU解析问题意图与关键词
+    metadata:
+      embed_model: text-embedding-ada-002
+  - id: s3
+    type: kb_embed
+    label: 问题向量化
+    position:
+      x: 420
+      'y': 200
+    description: 将问题转换为语义向量
+    metadata:
+      embed_model: text-embedding-3-large
+  - id: s4
+    type: kb_retrieve
+    label: 知识检索
+    position:
+      x: 600
+      'y': 200
+    description: Top-K 相似度检索
+    metadata:
+      vector_db: Pinecone
+      accuracy: Top-5 Recall@0.85
+  - id: s5
+    type: kb_rerank
+    label: 精排重排
+    position:
+      x: 600
+      'y': 360
+    description: 使用 Cross-Encoder 精排
+    metadata:
+      embed_model: bge-reranker-large
+  - id: s6
+    type: kb_gateway
+    label: 置信度判断
+    position:
+      x: 780
+      'y': 280
+    description: 相关性分数是否达到阈值
+  - id: s7
+    type: kb_generate
+    label: 答案生成
+    position:
+      x: 960
+      'y': 200
+    description: GPT-4 结合上下文生成答案
+    metadata:
+      model: GPT-4o
+      temperature: '0.3'
+  - id: s8
+    type: kb_output
+    label: 结果返回
+    position:
+      x: 1140
+      'y': 200
+    description: 返回答案+参考来源
+edges:
+  - id: e1
+    source: s1
+    target: s2
+  - id: e2
+    source: s2
+    target: s3
+  - id: e3
+    source: s3
+    target: s4
+  - id: e4
+    source: s4
+    target: s5
+  - id: e5
+    source: s5
+    target: s6
+  - id: e6
+    source: s6
+    target: s7
+    label: 置信度≥0.7
+  - id: e7
+    source: s6
+    target: s2
+    label: 重新检索
+  - id: e8
+    source: s7
+    target: s8

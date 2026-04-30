@@ -1,0 +1,125 @@
+id: example_system_order
+name: 电商下单系统集成链路
+version: v2.1
+description: 用户下单全链路系统集成：从前端请求到库存、支付、物流各服务的编排协调
+chainTypeId: system
+steps:
+  - id: y1
+    type: sys_trigger
+    label: 用户下单请求
+    position:
+      x: 60
+      'y': 200
+    description: 前端POST /orders
+    metadata:
+      endpoint: POST /api/v2/orders
+      protocol: HTTP/REST
+  - id: y2
+    type: sys_gateway
+    label: API 网关鉴权
+    position:
+      x: 240
+      'y': 200
+    description: JWT验证+限流100r/s
+    metadata:
+      auth_type: JWT Bearer Token
+      sla_target: P99 < 50ms
+  - id: y3
+    type: sys_api
+    label: 库存查询
+    position:
+      x: 420
+      'y': 120
+    description: 调用库存服务检查可用量
+    metadata:
+      endpoint: GET /inventory/{sku}
+      timeout_ms: '200'
+  - id: y4
+    type: sys_db
+    label: 创建订单
+    position:
+      x: 420
+      'y': 280
+    description: 写入订单数据库（事务）
+    metadata:
+      dependencies:
+        - 订单服务
+        - MySQL主库
+  - id: y5
+    type: sys_api
+    label: 发起支付
+    position:
+      x: 620
+      'y': 200
+    description: 调用支付网关
+    metadata:
+      endpoint: POST /payment/charge
+      protocol: HTTP/REST
+      timeout_ms: '5000'
+      retry_policy: 3次/指数退避
+  - id: y6
+    type: sys_mq
+    label: 发布订单消息
+    position:
+      x: 820
+      'y': 120
+    description: Kafka发布order.created事件
+    metadata:
+      protocol: 消息队列(MQ)
+  - id: y7
+    type: sys_cache
+    label: 更新缓存
+    position:
+      x: 820
+      'y': 280
+    description: Redis更新订单状态缓存
+    metadata:
+      timeout_ms: '50'
+  - id: y8
+    type: sys_breaker
+    label: 熔断检查
+    position:
+      x: 920
+      'y': 200
+    description: 检查支付服务健康状态
+  - id: y9
+    type: sys_response
+    label: 返回结果
+    position:
+      x: 1100
+      'y': 200
+    description: 返回订单ID和支付结果
+edges:
+  - id: e1
+    source: y1
+    target: y2
+  - id: e2
+    source: y2
+    target: y3
+    label: 鉴权通过
+  - id: e3
+    source: y2
+    target: y4
+  - id: e4
+    source: y3
+    target: y5
+    label: 库存充足
+  - id: e5
+    source: y4
+    target: y5
+  - id: e6
+    source: y5
+    target: y6
+    label: 支付成功
+  - id: e7
+    source: y5
+    target: y7
+  - id: e8
+    source: y6
+    target: y8
+  - id: e9
+    source: y7
+    target: y8
+  - id: e10
+    source: y8
+    target: y9

@@ -1,0 +1,129 @@
+id: example_tool_report
+name: 自动化运营报表生成
+version: v1.3
+description: 每日定时自拉取数据、生成可视化图表、导出PDF并发送给相关负责人
+chainTypeId: tool
+steps:
+  - id: t1
+    type: tool_trigger
+    label: 定时触发
+    position:
+      x: 60
+      'y': 200
+    description: 每天 09:00 触发
+    metadata:
+      tool_name: Cron调度器
+      tool_type: API调用
+  - id: t2
+    type: tool_node
+    label: 数据拉取
+    position:
+      x: 240
+      'y': 200
+    description: 调用BI API获取昨日数据
+    metadata:
+      tool_name: BI数据API
+      tool_type: API调用
+      parameters: '{"date": "yesterday", "metrics": ["uv","pv","revenue"]}'
+  - id: t3
+    type: tool_condition
+    label: 数据完整性检查
+    position:
+      x: 440
+      'y': 200
+    description: 所有指标是否有效？
+  - id: t4
+    type: tool_node
+    label: 报表生成
+    position:
+      x: 640
+      'y': 120
+    description: Python生成Excel报表
+    metadata:
+      tool_name: Python-xlsxwriter
+      tool_type: 脚本执行
+      timeout: 60s
+  - id: t5
+    type: tool_node
+    label: 图表绘制
+    position:
+      x: 640
+      'y': 280
+    description: ECharts生成可视化图
+    metadata:
+      tool_name: ECharts渲染
+      tool_type: 脚本执行
+  - id: t6
+    type: tool_transform
+    label: 整合输出
+    position:
+      x: 840
+      'y': 200
+    description: 合并报表与图表为HTML
+  - id: t7
+    type: tool_node
+    label: PDF 导出
+    position:
+      x: 1040
+      'y': 200
+    description: Puppeteer截图转PDF
+    metadata:
+      tool_name: Puppeteer
+      tool_type: 脚本执行
+  - id: t8
+    type: tool_node
+    label: 邮件发送
+    position:
+      x: 1040
+      'y': 360
+    description: SMTP发送给管理层
+    metadata:
+      tool_name: SMTP邮件
+      tool_type: 通知推送
+  - id: t9
+    type: tool_error
+    label: 异常告警
+    position:
+      x: 440
+      'y': 360
+    description: 数据缺失时Slack告警
+  - id: t10
+    type: tool_output
+    label: 完成
+    position:
+      x: 1240
+      'y': 280
+    description: 记录执行日志
+edges:
+  - id: e1
+    source: t1
+    target: t2
+  - id: e2
+    source: t2
+    target: t3
+  - id: e3
+    source: t3
+    target: t4
+    label: 数据完整
+  - id: e4
+    source: t3
+    target: t9
+    label: 数据缺失
+  - id: e5
+    source: t3
+    target: t5
+  - id: e6
+    source: t4
+    target: t6
+  - id: e7
+    source: t5
+    target: t6
+  - id: e8
+    source: t6
+    target: t7
+  - id: e9
+    source: t7
+    target: t8
+  - id: e10
+    source: t8
+    target: t10
