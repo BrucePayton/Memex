@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "个人开发备注日记",
+  "active": "个人文档中心",
   "projects": [
     {
       "slug": "中国企业会计准则",
@@ -17,7 +17,7 @@
       "description": "专门用来维护资金的账户业务办理手册知识",
       "model": "default",
       "created": "2026-04-28",
-      "last_used": "2026-05-01",
+      "last_used": "2026-05-02",
       "template": "llm-research"
     },
     {
@@ -26,7 +26,16 @@
       "description": "整理并维护Downloads目录中的各类文档，包括财务报告、知识库建设、AI智能体分析、业务流程等",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-01",
+      "last_used": "2026-05-02",
+      "template": "llm-research"
+    },
+    {
+      "slug": "askdata-platform",
+      "title": "AskData Platform",
+      "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
+      "model": "default",
+      "created": "2026-05-02",
+      "last_used": "2026-05-02",
       "template": "llm-research"
     },
     {
