@@ -1,8 +1,8 @@
 ---
 title: "Docker部署"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -241,4 +241,11 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[Docker部署模式]] — Docker部署模式速查
+- [[Nginx网络]] — Nginx 反向代理配置
+- [[Keycloak认证]] — Keycloak 容器配置
+- [[数据库与SQL]] — DB-GPT 容器部署
+- [[Git版本控制]] — Git Token 配置
+- [[知识库索引]]

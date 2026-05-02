@@ -1,8 +1,8 @@
 ---
 title: "Web链接"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -121,4 +121,10 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[API密钥与凭证]] — API 密钥管理
+- [[Nginx网络]] — 反向代理与 URL 路由
+- [[股票交易]] — 股票数据源链接
+- [[数据库与SQL]] — 数据库连接
+- [[知识库索引]]

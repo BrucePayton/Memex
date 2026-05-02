@@ -1,8 +1,8 @@
 ---
 title: "数据库与SQL"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -263,4 +263,10 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[数据库操作速查]] — SQL 查询模式速查
+- [[Docker部署]] — DB-GPT / TuGraph 容器部署
+- [[财务看板]] — 财务数据查询
+- [[财务看板设计模式]] — 数据可视化
+- [[知识库索引]]

@@ -1,8 +1,8 @@
 ---
 title: "OpenClaw工具"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -92,4 +92,10 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[OpenClaw工具链]] — OpenClaw工具配置
+- [[Claw Code快捷启动]] — Claw Code 启动配置
+- [[AI模型提供商概览]] — AI 模型提供商
+- [[小红书运营笔记]] — 小红书 MCP 配置
+- [[知识库索引]]

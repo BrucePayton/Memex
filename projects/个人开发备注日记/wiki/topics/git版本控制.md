@@ -1,8 +1,8 @@
 ---
 title: "Git版本控制"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -35,4 +35,10 @@ tags: []
 
 ---
 
+## 相关页面
+
+- [[Git工作流速查]] — Git 操作速查
+- [[Docker部署模式]] — 容器部署
+- [[API密钥与凭证]] — GitHub PAT 配置
+- [[知识库索引]]
 

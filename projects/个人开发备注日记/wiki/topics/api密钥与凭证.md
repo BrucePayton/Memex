@@ -1,8 +1,8 @@
 ---
 title: "API密钥与凭证"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -90,4 +90,9 @@ tags: []
 
 ---
 
+## 相关页面
+
+- [[AI模型提供商概览]] — 各提供商 API 密钥配置
+- [[Claw Code快捷启动]] — Claw Code 环境变量配置
+- [[知识库索引]]
 

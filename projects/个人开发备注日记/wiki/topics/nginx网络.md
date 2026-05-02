@@ -1,8 +1,8 @@
 ---
 title: "Nginx网络"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -295,4 +295,10 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[Docker部署模式]] — Nginx 容器部署
+- [[Docker部署]] — Nginx 容器操作笔记
+- [[Keycloak认证]] — 认证服务路由
+- [[API密钥与凭证]] — 服务凭据
+- [[知识库索引]]

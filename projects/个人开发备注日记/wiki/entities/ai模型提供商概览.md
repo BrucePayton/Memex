@@ -2,7 +2,7 @@
 title: "AI模型提供商概览"
 type: entity
 created: 2026-04-30
-last_updated: 2026-04-30
+last_updated: 2026-05-02
 source_count: 0
 confidence: medium
 status: active

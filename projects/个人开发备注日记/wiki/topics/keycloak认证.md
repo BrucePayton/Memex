@@ -1,8 +1,8 @@
 ---
 title: "Keycloak认证"
-type: topic
-created: 2026-04-30
-last_updated: 2026-04-30
+type: "concept"
+created: "2026-04-30"
+last_updated: "2026-05-02"
 source_count: 0
 confidence: medium
 status: active
@@ -45,4 +45,9 @@ tags: []
 
 ---
 
+## 相关页面
 
+- [[Docker部署]] — Keycloak 容器部署笔记
+- [[Nginx网络]] — 反向代理配置
+- [[API密钥与凭证]] — 认证凭据管理
+- [[知识库索引]]
