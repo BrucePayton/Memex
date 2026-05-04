@@ -2,4 +2,4 @@
 
 | Date | Source | Summary |
 |------|--------|---------|
-| 2026-05-04 | Dify Model Runtime | 记录 Dify Model Runtime 架构分析，规划 LLM Provider 多供应商体系建设路线图 |
+| 2026-05-04 | 代码库扫描 | Claw Code 实现审计：实际实现 vs wiki 分析的偏差分析。发现实现方向从 Rust CLI 集成偏移为 Python 原生内嵌，PolicyEngine/BranchLock 已实现但孤立 |
