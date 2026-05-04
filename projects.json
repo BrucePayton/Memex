@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "个人文档中心",
+  "active": "行业标准",
   "projects": [
     {
       "slug": "中国企业会计准则",
@@ -53,6 +53,15 @@
       "description": "用来进行dsc platform 管理用的",
       "model": "default",
       "created": "2026-05-03",
+      "last_used": "2026-05-04",
+      "template": "llm-research"
+    },
+    {
+      "slug": "行业标准",
+      "title": "行业标准",
+      "description": "专门用来进行行业分类标准的知识维护",
+      "model": "default",
+      "created": "2026-05-04",
       "last_used": "2026-05-04",
       "template": "llm-research"
     }
