@@ -455,6 +455,56 @@ main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 .graph-legend .gl-dot{width:8px;height:8px;border-radius:50%}
 .raw-view-pre{font-family:var(--mono);font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:14px;max-height:70vh;overflow:auto}
 
+/* ── Streaming Progress Panel ── */
+.stream-progress{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-lg);margin:12px 0;overflow:hidden;box-shadow:var(--shadow-md);animation:sp-enter .3s ease}
+@keyframes sp-enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.sp-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.sp-icon{font-size:16px;animation:sp-spin 1.5s linear infinite}
+.sp-icon.done{animation:none}
+.sp-icon.cancelled{animation:none}
+@keyframes sp-spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+.sp-title{flex:1;font-size:13px;font-weight:600;color:var(--text)}
+.sp-elapsed{font-size:12px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sp-cancel{padding:4px 12px;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--muted);font-size:11px;transition:all var(--d-fast)}
+.sp-cancel:hover{color:var(--red);border-color:var(--red);background:var(--bg3)}
+.sp-phases{padding:10px 16px;border-bottom:1px solid var(--border)}
+.sp-phase{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:var(--muted);transition:color var(--d-fast)}
+.sp-phase.active{color:var(--text)}
+.sp-phase.done{color:var(--green)}
+.sp-check{font-size:13px;width:16px;text-align:center}
+.sp-dot{font-size:14px;width:16px;text-align:center;animation:sp-pulse 1.5s ease-in-out infinite}
+.sp-dash{font-size:12px;width:16px;text-align:center}
+@keyframes sp-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.sp-log{padding:8px 16px;max-height:200px;overflow-y:auto;font-size:11px;font-family:var(--mono);line-height:1.6}
+.sp-entry{color:var(--muted);transition:color var(--d-fast);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-entry.active{color:var(--text)}
+.sp-entry.read{color:var(--muted)}.sp-entry.write{color:var(--orange)}.sp-entry.create{color:var(--green)}.sp-entry.grep{color:var(--muted2)}
+.sp-entry.error{color:var(--red)}
+.sp-more{color:var(--muted2);cursor:pointer;font-size:10px;padding:4px 0}
+.sp-more:hover{color:var(--text)}
+.sp-still{padding:6px 16px;font-size:11px;color:var(--muted2);font-style:italic;animation:blink 1.2s infinite}
+
+/* ── Stream Drawer (completed) ── */
+.stream-drawer{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-lg);margin:12px 0;overflow:hidden;box-shadow:var(--shadow-md);animation:sp-enter .3s ease;transition:max-height .35s ease,opacity .2s ease}
+.stream-drawer.collapsed{max-height:48px;overflow:hidden}
+.stream-drawer.expanded{max-height:600px;overflow-y:auto}
+.sd-header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--bg3);border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+.sd-header:hover{background:var(--bg4)}
+.sd-icon{font-size:16px}
+.sd-title{flex:1;font-size:13px;font-weight:600;color:var(--text)}
+.sd-elapsed{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.sd-toggle{font-size:12px;color:var(--muted);transition:transform .2s ease}
+.stream-drawer.collapsed .sd-toggle{transform:rotate(-90deg)}
+.sd-body{padding:14px 16px;font-size:12px;line-height:1.6}
+.sd-body .sd-section{margin-bottom:12px}
+.sd-body .sd-section:last-child{margin-bottom:0}
+.sd-body .sd-section-title{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:var(--muted)}
+.sd-body .sd-item{padding:3px 0;color:var(--text2)}
+.sd-body .sd-item.critical{color:var(--red)}.sd-body .sd-item.warning{color:var(--orange)}.sd-body .sd-item.info{color:var(--muted)}
+.sd-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.sd-actions button{padding:5px 12px;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-size:11px;transition:all var(--d-fast)}
+.sd-actions button:hover{color:var(--text);border-color:var(--border2);background:var(--bg3)}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -680,6 +730,9 @@ const I18N={
     raw_open:'Open',
     settings_ai_title:'AI provider & CLI',
     settings_cli_binary:'CLI command',
+    settings_cli_type:'CLI Type',
+    settings_cli_type_claude:'Claude Code',
+    settings_cli_type_claw:'Claw Code',
     settings_extra_args:'Extra CLI args (JSON array of flags)',
     settings_ai_provider:'Provider',
     settings_provider_cli:'Claude CLI (tools)',
@@ -700,7 +753,7 @@ const I18N={
     settings_cli_path_extra:'Extra PATH (one dir per line)',
     settings_cli_path_extra_hint:'Prepended for subprocess only. Use for Homebrew/nvm/global npm bin when the dashboard PATH is minimal.',
     settings_quick_cli:'Vendor wrappers',
-    settings_vendor_wrap_hint:'Run scripts/install-memex-cli-wrappers.sh once (symlinks ~/.claude-*-env → memex-claude-qwen / deepseek / kimi). Then pick a shortcut or put ~/bin in Extra PATH.',
+    settings_vendor_wrap_hint:'Run scripts/install-memex-cli-wrappers.sh once. Creates symlinks: claude → ~/.claude-*-env, claw → ~/.claw-*-env. Then pick a shortcut or put ~/bin in Extra PATH.',
     settings_profile_active:'Named profile',
     settings_profile_none:'(none)',
     settings_intro:'Set the CLI binary, optional flag JSON, and OpenAI-compatible HTTP (API keys never leave the server). Ingest and Lint still need a tool-capable Claude CLI.',
@@ -749,6 +802,10 @@ const I18N={
     header_new_project:'New project', header_delete_project:'Delete project', header_claude_model:'Claude model',
     opt_template_generic:'generic (default)',
     wiki_root:'wiki/ (root)',
+    stream_cancel:'Cancel', stream_done:'Complete', stream_error:'Error', stream_cancelled:'Cancelled',
+    stream_collapse:'Collapse ▼', stream_still_working:'Still working...',
+    model_desc_opus:'Highest quality (most powerful)', model_desc_sonnet:'Balanced quality/speed', model_desc_haiku:'Fast and economical', model_desc_default:'Use CLI default model',
+    legacy_option:'(legacy — root wiki/)',
   },
   ko:{
     search_placeholder:'페이지 검색...',
@@ -843,7 +900,7 @@ const I18N={
     raw_loading:'불러오는 중…', raw_empty:'원본 파일이 없습니다.', raw_viewer_title:'원본 파일',
     raw_binary_hint:'[바이너리 파일 — 미리보기 불가]', raw_sources_strip_title:'원본 파일(raw)',
     raw_view_action:'원본 보기', raw_open:'열기',
-    settings_ai_title:'AI 공급자·CLI', settings_cli_binary:'CLI 명령', settings_extra_args:'추가 CLI 인자(JSON 배열)',
+    settings_ai_title:'AI 공급자·CLI', settings_cli_binary:'CLI 명령', settings_cli_type:'CLI 유형', settings_cli_type_claude:'Claude Code', settings_cli_type_claw:'Claw Code', settings_extra_args:'추가 CLI 인자(JSON 배열)',
     settings_ai_provider:'공급자', settings_provider_cli:'Claude CLI(도구 사용)', settings_provider_openai:'OpenAI 호환 HTTP',
     settings_openai_url:'API 베이스 URL', settings_openai_model:'모델 ID', settings_openai_key:'API 키',
     settings_key_placeholder:'비워 두면 기존 키 유지', settings_save_ai:'AI 설정 저장', settings_test_ai:'HTTP 연결 테스트', settings_test_cli:'CLI 테스트',
@@ -851,7 +908,7 @@ const I18N={
     settings_http_temp:'Temperature', settings_http_maxtok:'Max tokens', settings_http_maxtok_hint:'0 = 생략',
     settings_cli_path_extra:'추가 PATH (줄당 디렉터리)', settings_cli_path_extra_hint:'자프로세스 PATH 앞에만 붙습니다.',
     settings_quick_cli:'vendor 래퍼',
-    settings_vendor_wrap_hint:'scripts/install-memex-cli-wrappers.sh 실행(기본 ~/bin에 memex-claude-qwen 등 설치). 아래 버튼 선택 또는 Extra PATH에 해당 디렉터리 추가.',
+    settings_vendor_wrap_hint:'scripts/install-memex-cli-wrappers.sh 실행(기본 ~/bin에 claude/claw 래퍼 설치). Claude → ~/.claude-*-env, Claw → ~/.claw-*-env 매핑. 아래 버튼 선택 또는 Extra PATH에 해당 디렉터리 추가.',
     settings_profile_active:'프로파일', settings_profile_none:'(없음)',
     settings_intro:'CLI 실행 파일·추가 인자·OpenAI 호환 HTTP를 설정합니다(API 키는 서버에만 저장). 수집·검진 등 도구 작업은 Claude CLI가 필요합니다.',
     ingest_result_created:'생성', ingest_result_modified:'수정',
@@ -903,6 +960,8 @@ const I18N={
     header_new_project:'새 프로젝트', header_delete_project:'프로젝트 삭제', header_claude_model:'Claude 모델',
     opt_template_generic:'generic (기본)',
     wiki_root:'wiki/ (root)',
+    model_desc_opus:'최고 품질 (가장 강력)', model_desc_sonnet:'균형잡힌 품질/속도', model_desc_haiku:'빠르고 경제적', model_desc_default:'CLI 기본 모델 사용',
+    legacy_option:'(legacy — 루트 wiki/)',
   },
   zh:{
     search_placeholder:'搜索页面…', tab_tree:'目录', tab_pages:'页面', tab_log:'日志', tab_raw:'Raw',
@@ -967,7 +1026,7 @@ const I18N={
     raw_loading:'加载中…', raw_empty:'当前项目没有 raw 文件。', raw_viewer_title:'Raw 原文',
     raw_binary_hint:'[二进制文件 — 无法预览]', raw_sources_strip_title:'原始来源 (raw)',
     raw_view_action:'查看 raw', raw_open:'打开',
-    settings_ai_title:'AI 供应商与 CLI', settings_cli_binary:'CLI 命令', settings_extra_args:'额外 CLI 参数（JSON 数组）',
+    settings_ai_title:'AI 供应商与 CLI', settings_cli_binary:'CLI 命令', settings_cli_type:'CLI 类型', settings_cli_type_claude:'Claude Code', settings_cli_type_claw:'Claw Code', settings_extra_args:'额外 CLI 参数（JSON 数组）',
     settings_ai_provider:'供应商', settings_provider_cli:'Claude CLI（工具）', settings_provider_openai:'OpenAI 兼容 HTTP',
     settings_openai_url:'API 基础 URL', settings_openai_model:'模型 ID', settings_openai_key:'API 密钥',
     settings_key_placeholder:'留空则保留已保存的密钥', settings_save_ai:'保存 AI 设置', settings_test_ai:'测试 HTTP 连接', settings_test_cli:'测试 CLI',
@@ -975,7 +1034,7 @@ const I18N={
     settings_http_temp:'温度', settings_http_maxtok:'最大 tokens', settings_http_maxtok_hint:'0 表示不传（走供应商默认）',
     settings_cli_path_extra:'额外 PATH（每行一个目录）', settings_cli_path_extra_hint:'仅附加到子进程 PATH，用于 IDE 启动时找不到 Homebrew/nvm 全局 bin。',
     settings_quick_cli:'Vendor 包装',
-    settings_vendor_wrap_hint:'先运行 scripts/install-memex-cli-wrappers.sh（默认装入 ~/bin，映射 ~/.claude-*-env）。然后点快捷方式或把该目录填入「额外 PATH」。',
+    settings_vendor_wrap_hint:'先运行 scripts/install-memex-cli-wrappers.sh（默认装入 ~/bin，claude → ~/.claude-*-env，claw → ~/.claw-*-env）。然后点快捷方式或把该目录填入「额外 PATH」。',
     settings_profile_active:'命名配置', settings_profile_none:'（无）',
     settings_intro:'配置 CLI 命令、可选参数 JSON、以及 OpenAI 兼容 HTTP（密钥仅保存在服务端）。收录与检查等仍需支持工具的 Claude CLI。',
     ingest_result_created:'新建', ingest_result_modified:'修改',
@@ -1007,6 +1066,8 @@ const I18N={
     char_title:'打开助手', header_toggle_side:'切换侧栏 (Cmd/Ctrl+B)', header_project:'项目 (Cmd/Ctrl+P)',     header_new_project:'新建项目', header_delete_project:'删除项目', header_claude_model:'Claude 模型',
     opt_template_generic:'generic（默认）',
     wiki_root:'wiki/（根）',
+    model_desc_opus:'最高质量（最强大）', model_desc_sonnet:'平衡质量与速度', model_desc_haiku:'快速经济', model_desc_default:'使用 CLI 默认模型',
+    legacy_option:'(legacy — 根 wiki/)',
   },
 };
 let LANG=localStorage.getItem('karpathy-lang')||'en';
@@ -1016,6 +1077,7 @@ if(!I18N[LANG]){
 }
 function htmlLang(){return LANG==='zh'?'zh-Hans':LANG;}
 function t(k){return (I18N[LANG]&&I18N[LANG][k])||(I18N.en[k])||k;}
+function getModelDesc(id){var k=id.startsWith('claude-')?id.slice(7):'default';if(k.indexOf('-')>=0)k=k.slice(0,k.indexOf('-'));return t('model_desc_'+k);}
 function nextLangCode(){if(LANG==='en')return'ko';if(LANG==='ko')return'zh';return'en';}
 function applyI18n(){
   document.documentElement.setAttribute('lang',htmlLang());
@@ -1036,7 +1098,11 @@ function applyI18n(){
   var ps=document.getElementById('projectSelect');if(ps)ps.title=t('header_project');
   var np=document.querySelector('.h-proj-group .h-icon-btn[onclick^="openNewProjectModal"]');if(np){np.title=t('header_new_project');np.setAttribute('aria-label',t('header_new_project'));}
   var pd=document.getElementById('projDeleteBtn');if(pd){pd.title=t('header_delete_project');pd.setAttribute('aria-label',t('header_delete_project'));}
-  var ms=document.getElementById('modelSelect');if(ms)ms.title=t('header_claude_model');
+  var ms=document.getElementById('modelSelect');if(ms){ms.title=t('header_claude_model');
+    var ds=window._dashSettings||{};
+    if(ds.ai_provider!=='openai_compatible'&&MODELS.length){
+      ms.innerHTML=MODELS.map(function(m){return '<option value="'+m.id+'"'+(m.id===CURRENT_MODEL?' selected':'')+'>'+m.label+' — '+getModelDesc(m.id)+'</option>';}).join('');
+    }}
   var cc=document.getElementById('claudeChar');if(cc){cc.title=t('char_title');cc.setAttribute('aria-label',t('char_title'));}
   if(typeof updateChatLabels==='function')updateChatLabels();
   if(typeof refreshLlmChip==='function')refreshLlmChip();
@@ -1159,7 +1225,7 @@ async function loadProjects(){
     if (sel){
       var opts = [];
       if (d.legacy){
-        opts.push('<option value="">(legacy — 루트 wiki/)</option>');
+        opts.push('<option value="">' + esc(t('legacy_option')) + '</option>');
       }
       PROJECTS.forEach(function(p){
         var selAttr = (p.slug === CURRENT_PROJECT) ? ' selected' : '';
@@ -1218,7 +1284,7 @@ function previewProjectFolders(){
 async function openNewProjectModal(){
   var ms = document.getElementById('newProjModel');
   if (ms) ms.innerHTML = MODELS.map(function(m){
-    return '<option value="'+m.id+'">'+m.label+'</option>';
+    return '<option value="'+m.id+'">'+m.label+' — '+getModelDesc(m.id)+'</option>';
   }).join('');
   document.getElementById('newProjTitle').value='';
   document.getElementById('newProjSlug').value='';
@@ -1283,6 +1349,7 @@ async function loadSettings(){
     var r=await fetch('/api/settings');var d=await r.json();
     MODELS=d.models||[];
     window._httpPresets=d.http_presets||[];
+    window._cliTypes=d.cli_types||[];
     window._dashSettings=d.settings||{};
     var ds=window._dashSettings||{};
     var sel=document.getElementById('modelSelect');
@@ -1306,7 +1373,7 @@ async function loadSettings(){
       }else{
         CURRENT_MODEL=d.project_model||(d.settings||{}).model||'default';
         sel.innerHTML=MODELS.map(function(m){
-          return '<option value="'+m.id+'"'+(m.id===CURRENT_MODEL?' selected':'')+'>'+m.label+'</option>';
+          return '<option value="'+m.id+'"'+(m.id===CURRENT_MODEL?' selected':'')+'>'+m.label+' — '+getModelDesc(m.id)+'</option>';
         }).join('');
       }
     }
@@ -1800,8 +1867,17 @@ function renderTree(el){
 }
 function toggleFolder(el){
   var a=el.querySelector('.arrow'); var c=el.nextElementSibling;
-  if(c.style.display==='none'){c.style.display='block';a.classList.add('open');}
-  else{c.style.display='none';a.classList.remove('open');}
+  var fn=el.querySelector('.fname');
+  if(c.style.display==='none'){
+    c.style.display='block'; a.classList.add('open');
+    // Remember expanded folder so renderTree preserves it through re-renders
+    var click=String(fn.getAttribute('onclick')); var m=click.match(/'([^']+)'/);
+    if(m)curFolder=m[1];
+  } else {
+    c.style.display='none'; a.classList.remove('open');
+    var click2=String(fn.getAttribute('onclick')); var m2=click2.match(/'([^']+)'/);
+    if(m2&&curFolder===m2[1])curFolder=null;
+  }
 }
 
 function renderPageList(el){
@@ -1911,7 +1987,7 @@ function setupScrollSpy(){
 }
 
 function showPage(fn){
-  curFolder=null;
+  // Keep curFolder — preserve sidebar folder expansion when navigating
   cur=fn;setView('page');
   // Try exact match first
   let p=D.pages.find(x=>x.filename===fn);
@@ -2317,7 +2393,8 @@ async function doReflect(){
 }
 
 function buildReflectSection(title,desc,content,showCreate){
-  if(!content||content.trim()==='(none)'||content.trim()==='없음')content=t('reflect_sec_nothing');
+  var noneText=t('reflect_sec_nothing');
+  if(!content||content.trim()==='(none)'||content.trim()===noneText)content=noneText;
   var body=content.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
   var h='<div class="reflect-section">';
   h+='<div class="reflect-hdr" onclick="toggleReflectSection(this)"><span class="r-arrow">▶</span>'+esc(title)+'<span style="color:var(--muted);font-weight:400;font-size:11px;margin-left:auto">'+esc(desc)+'</span></div>';
@@ -2740,9 +2817,16 @@ async function showSettings(){
   var h='<div class="panel"><h2>'+t('settings_ai_title')+'</h2><p class="desc">'+esc(t('settings_intro'))+'</p>';
   h+='<div class="field"><label>'+t('settings_profile_active')+'</label><select id="setAiProfile">'+profOpts+'</select></div>';
   h+='<h3 style="font-size:14px;margin:20px 0 8px">CLI</h3>';
+  // CLI Type selector
+  var cliType=s.cli_type||'claude';
+  h+='<div class="field"><label>'+t('settings_cli_type')+'</label><select id="setCliType">';
+  (window._cliTypes||[]).forEach(function(ct){h+='<option value="'+esc(ct.id)+'"'+(ct.id===cliType?' selected':'')+'>'+esc(ct.label)+'</option>';});
+  h+='</select></div>';
   h+='<div class="field"><label>'+t('settings_cli_binary')+'</label><input type="text" id="setCliBin" value="'+esc(s.claude_cli_binary||'claude')+'"></div>';
   h+='<p style="font-size:11px;color:var(--muted);margin:-8px 0 4px">'+esc(t('settings_quick_cli'))+': ';
-  ['memex-claude-qwen','memex-claude-deepseek','memex-claude-kimi'].forEach(function(nm){h+='<button type="button" class="btn btn-outline" style="font-size:10px;padding:3px 8px;margin-right:4px" onclick="document.getElementById(\'setCliBin\').value=\''+nm+'\'">'+esc(nm)+'</button>';});
+  // Dynamically render wrapper buttons based on cli_type
+  var wrapNames=cliType==='claw'?['memex-claw-anthropic','memex-claw-dashscope','memex-claw-openrouter','memex-claw-xai','memex-claw-ollama']:['memex-claude-qwen','memex-claude-deepseek','memex-claude-kimi'];
+  wrapNames.forEach(function(nm){h+='<button type="button" class="btn btn-outline" style="font-size:10px;padding:3px 8px;margin-right:4px" onclick="document.getElementById(\'setCliBin\').value=\''+nm+'\'">'+esc(nm)+'</button>';});
   h+='</p>';
   h+='<p style="font-size:11px;color:var(--muted2);margin:0 0 10px;line-height:1.45">'+esc(t('settings_vendor_wrap_hint'))+'</p>';
   h+='<div class="field"><label>'+t('settings_cli_path_extra')+'</label><textarea class="edit-area" id="setCliPathExtra" style="min-height:64px" placeholder="/opt/homebrew/bin">'+esc(s.cli_path_extra||'')+'</textarea>';
@@ -2791,6 +2875,7 @@ async function saveAiSettings(){
     try{parsed=extras?JSON.parse(extras):[];}catch(e){toast('JSON: '+e.message,'err');return;}
     var tEl=document.getElementById('setHttpTemp'),mEl=document.getElementById('setHttpMaxTok'),cEl=document.getElementById('setCliPathExtra');
     var body={
+      cli_type:document.getElementById('setCliType').value,
       claude_cli_binary:document.getElementById('setCliBin').value,
       claude_cli_extra_args:parsed,
       ai_provider:document.getElementById('setAiProv').value,
@@ -3405,6 +3490,502 @@ function navTo(v){
   else if(v==='schema')showSchema();
   else if(v==='guide')showGuide();
   renderToolbar();
+}
+
+// ─── Streaming Progress Manager ───
+
+var _streamCtrl=null;
+var _streamTimer=null;
+var _streamElapsed=0;
+var _streamLogItems=[];
+var _streamMaxLog=20;
+var _streamCollapsedLog=false;
+var _streamPhaseMap={};
+var _streamPhaseOrder=[];
+var _streamStillTimeout=null;
+
+function fmtElapsed(s){var m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec;}
+
+function renderStreamProgress(title){
+  _streamLogItems=[];
+  _streamPhaseMap={};
+  _streamPhaseOrder=[];
+  _streamElapsed=0;
+  _streamCollapsedLog=false;
+  var h='<div class="stream-progress" id="streamPanel">';
+  h+='<div class="sp-header">';
+  h+='<span class="sp-icon" id="spIcon">⚙</span>';
+  h+='<span class="sp-title" id="spTitle">'+esc(title)+'</span>';
+  h+='<span class="sp-elapsed" id="spElapsed">00:00</span>';
+  h+='<button class="sp-cancel" id="spCancel" onclick="cancelStream()">'+esc(t('stream_cancel')||'Cancel')+'</button>';
+  h+='</div>';
+  h+='<div class="sp-phases" id="spPhases"></div>';
+  h+='<div class="sp-log" id="spLog"></div>';
+  h+='<div id="spStill"></div>';
+  h+='</div>';
+  var main=document.getElementById('content');
+  if(main){
+    var existing=main.querySelector('.stream-progress');
+    if(existing)existing.remove();
+    main.insertAdjacentHTML('afterbegin',h);
+  }
+  _streamTimer=setInterval(function(){
+    _streamElapsed++;
+    var el=document.getElementById('spElapsed');
+    if(el)el.textContent=fmtElapsed(_streamElapsed);
+  },1000);
+  resetStillTimer();
+}
+
+function addStreamPhase(key,label){
+  _streamPhaseOrder.push(key);
+  _streamPhaseMap[key]={label:label,status:'pending'};
+  renderPhases();
+}
+
+function setPhaseStatus(key,status){
+  if(_streamPhaseMap[key])_streamPhaseMap[key].status=status;
+  renderPhases();
+}
+
+function renderPhases(){
+  var el=document.getElementById('spPhases');
+  if(!el)return;
+  var h='';
+  for(var i=0;i<_streamPhaseOrder.length;i++){
+    var p=_streamPhaseMap[_streamPhaseOrder[i]];
+    var cls='sp-phase '+p.status;
+    var icon=p.status==='done'?'<span class="sp-check">✓</span>':p.status==='active'?'<span class="sp-dot">●</span>':'<span class="sp-dash">—</span>';
+    h+='<div class="'+cls+'">'+icon+esc(p.label)+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+function addStreamLog(text,type,active){
+  _streamCollapsedLog=false;
+  _streamLogItems.push({text:text,type:type||'',active:active||false});
+  resetStillTimer();
+  renderLog();
+}
+
+function clearStreamLog(){
+  _streamLogItems=[];
+  var el=document.getElementById('spLog');
+  if(el)el.innerHTML='';
+}
+
+function renderLog(){
+  var el=document.getElementById('spLog');
+  if(!el)return;
+  var items=_streamLogItems;
+  var shown=items;
+  var moreHtml='';
+  if(items.length>_streamMaxLog&&!_streamCollapsedLog){
+    shown=items.slice(-_streamMaxLog);
+    moreHtml='<div class="sp-more" onclick="expandLog()">··· '+(items.length-_streamMaxLog)+' more</div>';
+  }
+  var h='';
+  for(var i=0;i<shown.length;i++){
+    var it=shown[i];
+    var cls='sp-entry '+(it.type||'');
+    if(it.active)cls+=' active';
+    h+='<div class="'+cls+'">'+esc(it.text)+'</div>';
+  }
+  h+=moreHtml;
+  el.innerHTML=h;
+  el.scrollTop=el.scrollHeight;
+}
+
+function expandLog(){
+  _streamCollapsedLog=true;
+  renderLog();
+}
+
+function resetStillTimer(){
+  clearTimeout(_streamStillTimeout);
+  var el=document.getElementById('spStill');
+  if(el)el.innerHTML='';
+  _streamStillTimeout=setTimeout(function(){
+    var el2=document.getElementById('spStill');
+    if(el2)el2.innerHTML='<div class="sp-still">'+esc(t('stream_still_working')||'Still working...')+'</div>';
+  },5000);
+}
+
+function finalizeStream(success,resultHtml){
+  clearInterval(_streamTimer);
+  clearTimeout(_streamStillTimeout);
+  // Replace progress panel with drawer
+  var panel=document.getElementById('streamPanel');
+  if(!panel)return;
+  var elapsedText=fmtElapsed(_streamElapsed);
+  var iconClass=success?'sd-icon':'sd-icon';
+  var icon=success?'✓':'✗';
+  var title=success?(t('stream_done')||'Complete'):(t('stream_error')||'Error');
+  var h='<div class="stream-drawer expanded" id="streamDrawer">';
+  h+='<div class="sd-header" onclick="toggleDrawer()">';
+  h+='<span class="sd-icon">'+icon+'</span>';
+  h+='<span class="sd-title" id="sdTitle">'+esc(title)+' ('+elapsedText+')</span>';
+  h+='<span class="sd-elapsed">'+elapsedText+'</span>';
+  h+='<span class="sd-toggle">▼</span>';
+  h+='</div>';
+  h+='<div class="sd-body" id="sdBody">';
+  if(resultHtml)h+=resultHtml;
+  h+='<div class="sd-actions">';
+  h+='<button onclick="toggleDrawer()">'+esc(t('stream_collapse')||'Collapse ▼')+'</button>';
+  h+='</div>';
+  h+='</div></div>';
+  panel.outerHTML=h;
+}
+
+function toggleDrawer(){
+  var d=document.getElementById('streamDrawer');
+  if(!d)return;
+  var isCollapsed=d.classList.contains('collapsed');
+  d.classList.toggle('collapsed');
+  d.classList.toggle('expanded');
+}
+
+function cancelStream(){
+  if(_streamCtrl){
+    _streamCtrl.abort();
+    _streamCtrl=null;
+  }
+  var panel=document.getElementById('streamPanel');
+  if(panel){
+    var icon=document.getElementById('spIcon');
+    if(icon){icon.classList.remove('sp-icon');icon.classList.add('sp-icon','cancelled');icon.textContent='✗';}
+    var title=document.getElementById('spTitle');
+    if(title)title.textContent=t('stream_cancelled')||'Cancelled';
+    var cancel=document.getElementById('spCancel');
+    if(cancel)cancel.disabled=true;
+  }
+  clearInterval(_streamTimer);
+  clearTimeout(_streamStillTimeout);
+}
+
+function parseSSELine(line){
+  if(!line||line.indexOf('data: ')!==0)return null;
+  try{return JSON.parse(line.substring(6));}catch(e){return null;}
+}
+
+async function runStream(url,operationTitle,onProgress,opts){
+  opts=opts||{};
+  _streamCtrl=new AbortController();
+  renderStreamProgress(operationTitle);
+  var finalResult=null;
+  var ok=true;
+  var lastToolType='';
+  var streamBody=opts.body||'{}';
+  try{
+    var resp=await fetch(url,{method:'POST',signal:_streamCtrl.signal,headers:{'Content-Type':'application/json'},body:streamBody});
+    var reader=resp.body.pipeThrough(new TextDecoderStream()).getReader();
+    var buffer='';
+    while(true){
+      var r=await reader.read();
+      if(r.done)break;
+      buffer+=r.value;
+      var lines=buffer.split('\n');
+      buffer=lines.pop()||'';
+      for(var i=0;i<lines.length;i++){
+        var evt=parseSSELine(lines[i]);
+        if(!evt)continue;
+        if(evt.type==='__end__'){
+          // Final marker - capture finalResult from last 'done' event
+          continue;
+        }
+        if(evt.type==='done'){
+          ok=evt.ok!==false;
+          if(evt.output)finalResult=evt.output;
+        }
+        if(onProgress)onProgress(evt,function(toolType,fileText){
+          if(toolType)lastToolType=toolType;
+          if(fileText)addStreamLog(fileText,lastToolType,true);
+        });
+      }
+    }
+  }catch(e){
+    if(e.name==='AbortError'){
+      ok=false;
+    }else{
+      ok=false;
+      var panel=document.getElementById('streamPanel');
+      if(panel){
+        var el=document.getElementById('spLog');
+        if(el)el.innerHTML+='<div class="sp-entry error">Error: '+esc(e.message)+'</div>';
+      }
+    }
+  }finally{
+    _streamCtrl=null;
+  }
+  return {ok:ok,result:finalResult};
+}
+
+// ─── Modified operation functions (streaming) ───
+
+async function doLint(){
+  var btn=document.getElementById('lintBtn'),res=document.getElementById('lintResult'),fx=document.getElementById('lintFix');
+  btn.disabled=true;btn.textContent='...';fx.style.display='none';
+
+  var r=await runStream('/api/lint/stream','Lint: Analyzing wiki...',function(evt,addLog){
+    if(evt.type==='progress'){
+      var title=document.getElementById('spTitle');
+      if(title)title.textContent='Lint: '+evt.message;
+    }
+    if(evt.type==='heartbeat'){
+      resetStillTimer();
+      var el=document.getElementById('spElapsed');
+      if(el)el.textContent=evt.message||fmtElapsed(evt.elapsed);
+    }
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read'){
+        if(!addStreamPhase._r){addStreamPhase._r=true;addStreamPhase('reading','Reading wiki pages',true);}
+        addLog('Read: '+file,'read',true);
+      }else if(tool==='Write'){
+        if(addStreamPhase._r){setPhaseStatus('reading','done');addStreamPhase._r=false;}
+        addStreamPhase('writing','Writing lint report',true);
+        addLog('Write: '+file,'write',true);
+      }else if(tool==='Edit'){
+        addLog('Edit: '+file,'write',true);
+      }else if(tool==='Grep'){
+        addLog('Searching: '+(evt.pattern||file),'grep',true);
+      }else{
+        addLog(tool+(file?' '+file:''),'grep',true);
+      }
+    }
+    if(evt.type==='done'){
+      setPhaseStatus('writing','done');
+      addLog('Done','read',true);
+    }
+    if(evt.type==='error'){
+      addLog('Error: '+(evt.message||''),'error',true);
+    }
+  });
+
+  await Promise.all([loadWiki(),loadFolders()]);
+  renderStats();renderSidebar();
+
+  if(r.ok){
+    var report=r.result||'';
+    if(report){
+      var rd=report.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
+      res.className='result-box ok';res.innerHTML='<div class="md">'+marked.parse(rd)+'</div>';
+      res.querySelectorAll('.md a').forEach(function(a){var href=a.getAttribute('href');if(href&&href.endsWith('.md')&&href.indexOf('://')<0){a.onclick=function(e){e.preventDefault();showPage(href);};a.style.cursor='pointer';}});
+    }
+    fx.style.display='block';
+    fx.innerHTML='<button class="btn btn-orange" style="margin-top:12px" onclick="doLintFix()">'+esc(llmBtnLabel('lint_fix_btn','lint_fix'))+'</button><div id="lintFixResult"></div>';
+  }else{
+    res.className='result-box err';res.textContent='Lint failed.';
+  }
+  btn.disabled=false;btn.textContent=llmBtnLabel('lint_btn','lint');
+}
+
+async function doLintFix(){
+  var res=document.getElementById('lintFixResult');
+  res.className='result-box info';res.textContent='...';
+  await runStream('/api/lint/fix/stream','Lint: Fixing issues...',function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read')addLog('Read: '+file,'read',true);
+      else if(tool==='Write')addLog('Write: '+file,'write',true);
+      else if(tool==='Edit')addLog('Edit: '+file,'write',true);
+    }
+    if(evt.type==='done'){addLog('Done','read',true);}
+    if(evt.type==='error'){addLog('Error: '+(evt.message||''),'error',true);}
+  });
+  await Promise.all([loadWiki(),loadFolders()]);
+  renderStats();renderSidebar();
+  res.className='result-box ok';res.textContent='Lint fix complete.';
+}
+
+async function doReflect(){
+  var win=document.getElementById('reflectWindow').value;
+  var btn=document.getElementById('reflectRunBtn');
+  btn.disabled=true;btn.textContent=t('reflect_processing');
+
+  await runStream('/api/reflect/stream','Reflect: Analyzing activity...',function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read'){
+        if(file.indexOf('log.md')>=0){addStreamPhase('log','Reading activity log',true);addLog('Read: log.md','read',true);}
+        else if(file.indexOf('ingest')>=0){addStreamPhase('reports','Reading ingest reports',true);addLog('Read: '+file,'read',true);}
+        else{addLog('Read: '+file,'read',true);}
+      }
+      else if(tool==='Write'){addStreamPhase('writing','Writing reflect report',true);addLog('Write: '+file,'write',true);}
+    }
+    if(evt.type==='done'){addLog('Done','read',true);}
+  },{body:JSON.stringify({window:win})});
+
+  btn.disabled=false;btn.textContent=llmBtnLabel('reflect_btn','reflect');
+  await checkReflectStatus();
+}
+
+async function doReviewRefresh(fn){
+  var btns=document.querySelectorAll('#reviewList button');btns.forEach(function(b){b.disabled=true;});
+  await runStream('/api/review/refresh/stream','Refreshing: '+fn,function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read')addLog('Read: '+file,'read',true);
+      else if(tool==='Edit')addLog('Edit: '+file,'write',true);
+    }
+    if(evt.type==='done'){addLog('Done','read',true);}
+  },{body:JSON.stringify({filename:fn})});
+  await Promise.all([loadWiki(),loadFolders()]);renderStats();showReview();
+}
+
+async function doWrite(){
+  var topic=document.getElementById('writeTopic').value.trim();
+  if(!topic){alert(t('err_title_required'));return;}
+  var length=document.getElementById('writeLength').value;
+  var style=document.getElementById('writeStyle').value;
+  var btn=document.getElementById('writeBtn'),res=document.getElementById('writeResult'),sv=document.getElementById('writeSave');
+  btn.disabled=true;btn.textContent=t('write_processing');res.className='result-box info';res.textContent=t('write_processing');sv.style.display='none';
+
+  var r=await runStream('/api/write/stream','Writing: '+topic,function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read'){
+        addStreamPhase('reading','Reading wiki sources',true);
+        addLog('Read: '+file,'read',true);
+      }
+      else if(tool==='Write'){
+        setPhaseStatus('reading','done');
+        addStreamPhase('writing','Writing article',true);
+        addLog('Write: '+file,'write',true);
+      }
+    }
+    if(evt.type==='done'){
+      setPhaseStatus('writing','done');
+      addLog('Done','read',true);
+    }
+  },{body:JSON.stringify({topic:topic,length:length,style:style})});
+
+  if(r.ok){
+    var draft=r.result||'';
+    var md=draft.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
+    res.className='result-box ok';res.innerHTML='<div class="md">'+marked.parse(md)+'</div>';
+    res.querySelectorAll('.md a').forEach(function(a){var href=a.getAttribute('href');if(href&&href.endsWith('.md')&&href.indexOf('://')<0){a.onclick=function(e){e.preventDefault();showPage(href);};a.style.cursor='pointer';}});
+    sv.style.display='block';
+    sv.innerHTML='<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><input type="text" id="writeSaveTitle" placeholder="'+t('query_save_placeholder')+'" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px"><button class="btn btn-outline" onclick="doWriteSave()">'+esc(llmBtnLabel('query_save_to_wiki','query_save'))+'</button></div>';
+    window._lastDraft=draft;
+  }else{
+    res.className='result-box err';res.textContent='Write failed.';
+  }
+  btn.disabled=false;btn.textContent=llmBtnLabel('write_btn','write');
+}
+
+async function doCompare(){
+  var a=document.getElementById('cmpA').value, b=document.getElementById('cmpB').value, save=document.getElementById('cmpSaveAs').value.trim();
+  if(!a||!b){alert('Select two pages');return;}
+  if(a===b){alert('Select two different pages');return;}
+  var btn=document.getElementById('cmpBtn'), res=document.getElementById('cmpResult');
+  btn.disabled=true;btn.textContent=t('compare_processing');res.className='result-box info';res.textContent=t('compare_processing');
+
+  var r=await runStream('/api/compare/stream','Comparing: '+a+' vs '+b,function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read')addLog('Read: '+file,'read',true);
+      else if(tool==='Write'){addStreamPhase('writing','Writing comparison',true);addLog('Write: '+file,'write',true);}
+    }
+    if(evt.type==='done'){addLog('Done','read',true);}
+  },{body:JSON.stringify({page_a:a,page_b:b,save_as:save})});
+
+  if(r.ok){
+    var analysis=r.result||'';
+    var ad=analysis.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
+    res.className='result-box ok';res.innerHTML='<div class="md">'+marked.parse(ad)+'</div>';
+    res.querySelectorAll('.md a').forEach(function(ha){var href=ha.getAttribute('href');if(href&&href.endsWith('.md')&&href.indexOf('://')<0){ha.onclick=function(e){e.preventDefault();showPage(href);};ha.style.cursor='pointer';}});
+    if(save){
+      await Promise.all([loadWiki(),loadFolders()]);renderStats();renderSidebar();
+    }
+  }else{
+    res.className='result-box err';res.textContent='Compare failed.';
+  }
+  btn.disabled=false;btn.textContent=llmBtnLabel('compare_btn','compare');
+}
+
+async function doIngest(){
+  var ttl=document.getElementById('ingestTitle').value.trim(),ct=document.getElementById('ingestContent').value.trim(),f=document.getElementById('ingestFolder').value;
+  if(!ttl||!ct){alert(t('err_title_required'));return;}
+  var btn=document.getElementById('ingestBtn'),res=document.getElementById('ingestResult');
+  btn.disabled=true;btn.textContent=t('ingest_processing');res.className='result-box info';
+
+  await runStream('/api/ingest/stream','Ingesting: '+ttl,function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='progress'){
+      var title=document.getElementById('spTitle');
+      if(title)title.textContent='Ingesting: '+ttl+' — '+evt.message;
+    }
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read'){
+        addStreamPhase('reading','Reading wiki index',true);
+        addLog('Read: '+file,'read',true);
+      }
+      else if(tool==='Write'){
+        addStreamPhase('analyzing','Creating pages',true);
+        addLog('Create: '+file,'create',true);
+      }
+      else if(tool==='Edit'){
+        addLog('Edit: '+file,'write',true);
+      }
+    }
+    if(evt.type==='tool_result'){
+      var t=evt.tool||'';
+      if(t==='Read'){
+        if(!_streamPhaseMap['analyzing']){
+          setPhaseStatus('reading','done');
+          addStreamPhase('analyzing','Analyzing and creating pages',true);
+        }
+      }
+    }
+    if(evt.type==='done'){
+      if(_streamPhaseMap['reading'])setPhaseStatus('reading','done');
+      if(_streamPhaseMap['analyzing'])setPhaseStatus('analyzing','done');
+      if(_streamPhaseMap['writing'])setPhaseStatus('writing','done');
+      addLog('Complete','read',true);
+    }
+    if(evt.type==='error'){
+      addLog('Error: '+(evt.message||''),'error',true);
+    }
+    if(evt.type==='post_action'&&(evt.action==='commit')){
+      addLog('Committed: '+evt.hash,'create',true);
+    }
+  },{body:JSON.stringify({title:ttl,content:ct,folder:f})});
+
+  await Promise.all([loadWiki(),loadFolders()]);renderStats();renderSidebar();
+  res.className='result-box ok';res.textContent='Ingest complete.';
+  btn.disabled=false;btn.textContent=llmBtnLabel('ingest_btn','ingest');
+}
+
+async function fixCitations(page){
+  var res=document.getElementById('provResult');
+  if(!res)return;
+  res.className='result-box info';res.textContent=t('fix_citation_processing')+page;
+  await runStream('/api/provenance/fix/stream','Fixing citations: '+page,function(evt,addLog){
+    if(evt.type==='heartbeat'){resetStillTimer();return;}
+    if(evt.type==='tool_use'){
+      var tool=evt.tool||'';
+      var file=evt.file||'';
+      if(tool==='Read')addLog('Read: '+file,'read',true);
+      else if(tool==='Edit')addLog('Edit: '+file,'write',true);
+    }
+    if(evt.type==='done'){addLog('Done','read',true);}
+  },{body:JSON.stringify({page:page})});
+  await Promise.all([loadWiki(),loadFolders()]);renderStats();renderSidebar();
+  setTimeout(function(){showProvenance();},500);
 }
 
 // ─── Events ───

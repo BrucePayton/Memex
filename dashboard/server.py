@@ -7,7 +7,7 @@ LLM Wiki Dashboard Server
 - 의존성 없음 (Python 3.10+ stdlib only)
 """
 
-import json, os, re, shutil, ssl, subprocess, sys, time, threading, urllib.error, urllib.parse, urllib.request
+import json, os, re, select, shutil, ssl, subprocess, sys, time, threading, urllib.error, urllib.parse, urllib.request
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from provenance import build_provenance_graph
@@ -48,6 +48,7 @@ SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
 
 _DEFAULT_SETTINGS = {
     "model": "default",
+    "cli_type": "claude",             # "claude" 或 "claw"
     "claude_cli_binary": "claude",
     "claude_cli_extra_args": [],
     "cli_path_extra": "",
@@ -62,6 +63,23 @@ _DEFAULT_SETTINGS = {
     "active_ai_profile": "",
 }
 
+# ─── CLI type registry ───
+
+CLI_TYPES = {
+    "claude": {
+        "label": "Claude Code",
+        "default_binary": "claude",
+        "wrapper_prefix": "memex-claude-",
+        "env_file_prefix": "~/.claude-",
+    },
+    "claw": {
+        "label": "Claw Code",
+        "default_binary": "claw",
+        "wrapper_prefix": "memex-claw-",
+        "env_file_prefix": "~/.claw-",
+    },
+}
+
 # OpenAI-compatible vendor presets (align with KnowledgeBuildAnalysis SetupPage AI_PRESETS)
 HTTP_PRESETS = [
     {"id": "openai", "name": "OpenAI", "endpoint": "https://api.openai.com/v1", "model": "gpt-4o"},
@@ -72,10 +90,10 @@ HTTP_PRESETS = [
 ]
 
 AVAILABLE_MODELS = [
-    {"id": "claude-opus-4-7", "label": "Opus 4.7", "desc": "최고 품질 (가장 강력)"},
-    {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "desc": "균형잡힌 품질/속도"},
-    {"id": "claude-haiku-4-5", "label": "Haiku 4.5", "desc": "빠르고 경제적"},
-    {"id": "default", "label": "Default", "desc": "CLI 기본 모델 사용"},
+    {"id": "claude-opus-4-7", "label": "Opus 4.7"},
+    {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6"},
+    {"id": "claude-haiku-4-5", "label": "Haiku 4.5"},
+    {"id": "default", "label": "Default"},
 ]
 
 _ALLOWED_MODEL_IDS = {m["id"] for m in AVAILABLE_MODELS}
@@ -110,7 +128,7 @@ def _apply_active_profile():
         return
     for k in (
         "ai_provider", "openai_base_url", "openai_api_key", "openai_model",
-        "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra",
+        "cli_type", "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra",
         "http_temperature", "http_max_tokens",
     ):
         if k in prof and prof[k] is not None:
@@ -201,12 +219,16 @@ def _build_llm_ui() -> dict:
         "query": qb,
         "assistant": qb,
     }
+    cli_type = SETTINGS.get("cli_type") or "claude"
+    cli_type_info = CLI_TYPES.get(cli_type, CLI_TYPES["claude"])
     return {
         "cli_short": cli_short,
         "http_short": http_short,
         "mode": mode,
         "http_ready": http_ready,
         "action_backend": action_backend,
+        "cli_type": cli_type,
+        "cli_type_label": cli_type_info.get("label", cli_type),
     }
 
 
@@ -254,9 +276,12 @@ def _cli_subprocess_env():
     return env
 
 
-def get_claude_cli_executable():
-    """Resolved path or command name for the configured Claude Code CLI."""
-    name = os.path.expanduser((SETTINGS.get("claude_cli_binary") or "claude").strip() or "claude")
+def get_cli_executable():
+    """Resolved path or command name for the configured CLI (claude or claw)."""
+    cli_type = SETTINGS.get("cli_type") or "claude"
+    cli_info = CLI_TYPES.get(cli_type, CLI_TYPES["claude"])
+    default_bin = cli_info.get("default_binary", "claude")
+    name = os.path.expanduser((SETTINGS.get("claude_cli_binary") or default_bin).strip() or default_bin)
     if os.path.isabs(name):
         p = Path(name)
         if p.is_file() and os.access(str(p), os.X_OK):
@@ -268,6 +293,10 @@ def get_claude_cli_executable():
     if resolved:
         return resolved
     return name
+
+
+# Backward compatibility alias
+get_claude_cli_executable = get_cli_executable
 
 
 def _parse_claude_extra_args():
@@ -755,6 +784,557 @@ def run_claude_tracked(prompt, cwd=None, project=None):
     return (ok, answer[:4000], r.stderr[:500] if not ok else "", files_read, token_usage)
 
 
+# ─── SSE Streaming Engine ───
+
+def _normalize_path(fp, proj=None):
+    """Convert absolute file path to project-relative string."""
+    if not fp:
+        return fp
+    try:
+        return str(Path(fp).relative_to(PROJECT_ROOT))
+    except ValueError:
+        pass
+    if proj:
+        for base in [proj.root, proj.wiki_dir]:
+            try:
+                return str(Path(fp).relative_to(base))
+            except ValueError:
+                continue
+    return fp
+
+
+def parse_stream_event(evt, elapsed=0):
+    """Normalize a raw stream-json event from Claude CLI to our SSE event format."""
+    evt_type = evt.get("type", "")
+
+    if evt_type == "start":
+        subtype = evt.get("subtype", "")
+        return {"type": "progress", "phase": "starting", "message": f"Starting {subtype}…", "elapsed": elapsed}
+
+    if evt_type == "result":
+        return {"type": "done", "ok": True, "output": evt.get("result", ""), "elapsed": elapsed}
+
+    if evt_type == "error":
+        return {"type": "error", "message": evt.get("message", "Unknown error"), "elapsed": elapsed}
+
+    # tool_use from assistant/delta: nested in message.content[] array
+    if evt_type in ("assistant", "delta", "content_block_start", "content_block_delta", "content_block_stop"):
+        msg = evt.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "tool_use":
+                    tool_name = item.get("name", "")
+                    tool_input = item.get("input", {})
+                    if tool_name == "Read":
+                        fp = tool_input.get("file_path", "")
+                        return {"type": "tool_use", "tool": "Read", "file": _normalize_path(fp), "elapsed": elapsed}
+                    if tool_name == "Write":
+                        fp = tool_input.get("file_path", "")
+                        return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "elapsed": elapsed}
+                    if tool_name == "Edit":
+                        fp = tool_input.get("file_path", "")
+                        return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "elapsed": elapsed}
+                    if tool_name == "Grep":
+                        pattern = tool_input.get("pattern", "")
+                        path = tool_input.get("path", "")
+                        return {"type": "tool_use", "tool": "Grep", "pattern": pattern, "path": _normalize_path(path) if path else "", "elapsed": elapsed}
+                    if tool_name == "Glob":
+                        pattern = tool_input.get("pattern", "")
+                        return {"type": "tool_use", "tool": "Glob", "pattern": pattern, "elapsed": elapsed}
+                    return {"type": "tool_use", "tool": tool_name, "input": {k: str(v)[:200] for k, v in tool_input.items()}, "elapsed": elapsed}
+
+    # tool_use from assistant (top-level key, alternate format)
+    tool_use = evt.get("tool_use")
+    if tool_use and isinstance(tool_use, dict):
+        tool_name = tool_use.get("name", "")
+        tool_input = tool_use.get("input", {})
+        if tool_name == "Read":
+            fp = tool_input.get("file_path", "")
+            return {"type": "tool_use", "tool": "Read", "file": _normalize_path(fp), "elapsed": elapsed}
+        if tool_name == "Write":
+            fp = tool_input.get("file_path", "")
+            return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "elapsed": elapsed}
+        if tool_name == "Edit":
+            fp = tool_input.get("file_path", "")
+            return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "elapsed": elapsed}
+        if tool_name == "Grep":
+            pattern = tool_input.get("pattern", "")
+            path = tool_input.get("path", "")
+            return {"type": "tool_use", "tool": "Grep", "pattern": pattern, "path": _normalize_path(path) if path else "", "elapsed": elapsed}
+        if tool_name == "Glob":
+            pattern = tool_input.get("pattern", "")
+            return {"type": "tool_use", "tool": "Glob", "pattern": pattern, "elapsed": elapsed}
+        return {"type": "tool_use", "tool": tool_name, "input": {k: str(v)[:200] for k, v in tool_input.items()}, "elapsed": elapsed}
+
+    # tool_result (user message with tool_result)
+    tur = evt.get("tool_use_result")
+    if tur and isinstance(tur, dict):
+        is_err = tur.get("is_error", False)
+        content = tur.get("content", "")
+        fp = ""
+        if isinstance(tur.get("file"), dict):
+            fp = tur["file"].get("filePath", "")
+        return {"type": "tool_result", "tool": tur.get("toolName", ""), "file": _normalize_path(fp), "status": "error" if is_err else "ok", "preview": (content or "")[:300], "elapsed": elapsed}
+
+    # Generic passthrough — display unknown event types on frontend
+    return {"type": "tool_use", "tool": f"[{evt_type or 'unknown'}]", "file": "", "elapsed": elapsed}
+
+
+def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
+    """Stream Claude CLI events via Popen (yield dicts). → done or error at end.
+
+    Uses --output-format stream-json for structured output.
+    Supports early termination via GeneratorExit → proc.terminate().
+    """
+    t = timeout or CLAUDE_TIMEOUT
+    target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
+    exe = get_cli_executable()
+    cmd = (
+        [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
+        + _model_args_for(project)
+        + _parse_claude_extra_args()
+        + ["--output-format", "stream-json", "--verbose", prompt]
+    )
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, cwd=target_cwd, env=_cli_subprocess_env(),
+        )
+        start = time.monotonic()
+        heartbeat_interval = 10  # seconds between heartbeat events
+        try:
+            while True:
+                readable, _, _ = select.select([proc.stdout], [], [], heartbeat_interval)
+                if readable:
+                    line = proc.stdout.readline()
+                    if not line:  # EOF
+                        break
+                    if not line.strip():
+                        continue
+                    elapsed = time.monotonic() - start
+                    try:
+                        evt = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    yield parse_stream_event(evt, elapsed=round(elapsed, 1))
+                else:
+                    # Timeout — emit heartbeat to keep frontend alive
+                    elapsed = time.monotonic() - start
+                    yield {"type": "heartbeat", "elapsed": round(elapsed, 1), "message": f"Processing... ({int(elapsed)}s)"}
+        except GeneratorExit:
+            raise
+        proc.wait(timeout=5)
+        final_elapsed = time.monotonic() - start
+        if proc.returncode != 0:
+            yield {"type": "error", "message": f"CLI exited with code {proc.returncode}", "elapsed": round(final_elapsed, 1)}
+        yield {"type": "done", "ok": proc.returncode == 0, "elapsed": round(final_elapsed, 1)}
+    except GeneratorExit:
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+    except Exception as e:
+        if proc and proc.poll() is None:
+            proc.terminate()
+        yield {"type": "error", "message": f"{type(e).__name__}: {e}", "elapsed": 0}
+
+
+# ─── SSE Helpers for Handler ───
+
+def _sse_data(event_dict):
+    """Serialize event dict to SSE wire format: 'data: {...}\\n\\n'"""
+    return "data: " + json.dumps(event_dict, ensure_ascii=False) + "\n\n"
+
+
+def _handle_stream(handler, events):
+    """Consume event generator, write SSE wire format, handle disconnect."""
+    try:
+        handler._sse_start()
+        for evt in events:
+            try:
+                handler._sse_send(evt)
+            except (BrokenPipeError, ConnectionResetError):
+                return  # client disconnected — generator handles cleanup
+        handler._sse_end()
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    except Exception as e:
+        import traceback
+        try:
+            handler._sse_send({"type": "error", "message": f"{type(e).__name__}: {e}", "elapsed": 0})
+            handler._sse_end()
+        except Exception:
+            print(f"[ERROR] SSE stream: {traceback.format_exc()[:800]}")
+
+
+# ─── Streaming Operation Wrappers ───
+
+def _op_prompt_for(operation, **kw):
+    """Map operation name + kwargs to the same prompt the blocking version uses."""
+    if operation == "lint":
+        proj = project_registry.get_project(kw.get("project_slug"))
+        today = datetime.now().strftime("%Y-%m-%d")
+        from index_strategy import get_index_instruction
+        idx_inst = get_index_instruction(proj.wiki_dir)
+        return f"""{idx_inst}
+
+⚡ PERFORMANCE: Use parallel tool calls — read multiple wiki pages in a single turn rather than sequentially.
+
+Read the "Lint checklist" section in CLAUDE.md and audit the entire wiki.
+
+Run **all** checks:
+
+### Structure
+- Pages missing frontmatter or invalid type
+- status: superseded without superseded_by
+- status: disputed without ## Disputed
+- superseded_by targets missing pages
+
+### Citations
+- Factual claims missing [^src-*]
+- Per-page citation coverage
+- [^src-*] referenced but undefined at bottom
+- Referenced source-summary pages missing from wiki/
+- source_count mismatches actual citations
+
+### Links
+- Orphan pages (no inbound [[wikilink]])
+- Mentioned concepts without pages
+- Related pages missing cross-links
+
+### Freshness (today: {today})
+- active pages with last_updated older than 30 days
+- source_count 1 but broad generalizations
+- confidence high but source_count < 2
+
+Report format:
+## Lint Report — {today}
+### Critical (must fix)
+- [ ] page.md — issue + suggested fix
+### Warning (should fix)
+- [ ] page.md — issue + suggested fix
+### Info (nice to have)
+- [ ] page.md — issue + suggested fix"""
+
+    if operation == "lint_fix":
+        return """You just ran the CLAUDE.md Lint checklist. Fix every issue found now:
+
+- Fix missing/invalid frontmatter
+- Add [^src-*] to uncited claims when a source exists
+- Align source_count with actual citations
+- Bump last_updated to today where appropriate
+- Add inbound [[wikilink]] to orphan pages; add missing cross-links
+- Create stub pages for mentioned concepts without pages (min. one citation)
+- Fix status / superseded_by inconsistencies
+- Add ## Disputed where status demands it
+- Refresh wiki/index.md, wiki/log.md, wiki/overview.md as needed
+
+Summarize fixes by Critical / Warning / Info."""
+
+    if operation == "reflect":
+        from project_registry import get_project as get_proj
+        from index_strategy import get_index_instruction
+        proj = get_proj(kw.get("project_slug"))
+        reflect_dir = proj.reflect_reports
+        reflect_dir.mkdir(parents=True, exist_ok=True)
+        window = kw.get("window", "last-10-ingests")
+
+        # Reuse _collect_reflect_context from above
+        ctx = _collect_reflect_context(window, project=proj)
+        reports_summary = "\n\n".join(
+            f"### {r['name']}\n{r['content']}" for r in ctx["reports"]
+        ) or "(no ingest reports)"
+        low_ratio = "\n".join(
+            f"- Q: {q['question'][:80]}  (wiki_ratio: {q['wiki_ratio']})"
+            for q in ctx["low_ratio_queries"]
+        ) or "(none)"
+        today = datetime.now().strftime("%Y-%m-%d")
+        report_path = f"reflect-reports/{today}.md"
+
+        return f"""Analyze the following data:
+
+## Recent wiki log (excerpt)
+{ctx['log_text'][-1500:]}
+
+## Ingest reports
+{reports_summary[:3000]}
+
+## Low wiki_ratio queries
+{low_ratio}
+
+Produce:
+
+1. **SUGGESTED_PAGES**: Entities/concepts that appear often but lack dedicated wiki pages.
+2. **SUGGESTED_SCHEMA**: If repeated ingest judgment patterns emerge, propose rules to add to CLAUDE.md.
+3. **SUGGESTED_SOURCES**: From low-ratio queries, suggest search terms / sources.
+4. **CONTRADICTION_REVIEW**: If conflicting source behaviors appear often, propose improvements.
+
+Save the result to {report_path}."""
+
+    if operation == "review_refresh":
+        proj = project_registry.get_project(kw.get("project_slug"))
+        filename = kw.get("filename", "")
+        today = datetime.now().strftime("%Y-%m-%d")
+        return f"""Read wiki/{filename} and:
+1. Check Sources in wiki/index.md for material that could add new perspective to this page
+2. If yes, merge that material with proper [^src-*] citations and refresh the page
+3. Set last_updated to {today}
+4. Summarize what you added
+
+If nothing new applies, reply "No new updates; refreshed last_updated only." and only bump last_updated."""
+
+    if operation == "fix_citations":
+        page = kw.get("page", "")
+        return f"""Read wiki/{page}.
+Find factual claims whose sentences lack inline citations [^src-*].
+Add appropriate [^src-source-slug] citations where a matching source exists.
+
+Rules:
+- Place citations at sentence ends; definitions at bottom: [^src-slug]: [[source-slug]]
+- Only use sources listed under Sources in wiki/index.md
+- Do not add a citation when no matching source exists
+- Keep existing citations
+
+Report what you changed."""
+
+    if operation == "ingest":
+        title = kw.get("title", "")
+        content = kw.get("content", "")
+        folder = kw.get("folder", "")
+        slug = kw.get("slug", "")
+        report_rel = kw.get("report_rel", "")
+        proj = project_registry.get_project(kw.get("project_slug"))
+        from index_strategy import get_index_instruction
+        idx_inst = get_index_instruction(proj.wiki_dir)
+        folder_inst = f" Place any new pages under wiki/{folder}/." if folder else ""
+        return f"""{idx_inst}
+IMPORTANT: Never modify or delete files under raw/ — raw/ is immutable. Only write under wiki/.
+Ingest raw/{slug}.md — read this source and create/update wiki pages according to CLAUDE.md. Skip preamble and execute.{folder_inst}
+
+When finished:
+1. Summarize why you made these choices in 3–5 lines (start with REASONING:).
+2. Create {report_rel} using this shape:
+# Ingest Report: {title}
+## Created
+- wiki/path/file.md — WHY: one line
+## Modified
+- wiki/path/file.md — WHY: one line
+## New cross-links
+- [[a]] ↔ [[b]]"""
+
+    if operation == "write":
+        proj = project_registry.get_project(kw.get("project_slug"))
+        topic = kw.get("topic", "")
+        length = kw.get("length", "medium")
+        style = kw.get("style", "blog")
+        from index_strategy import get_index_instruction
+        idx_inst = get_index_instruction(proj.wiki_dir)
+        word_map = {"short": "~300 words", "medium": "~700 words", "long": "~1500 words"}
+        style_map = {
+            "blog": "Blog tone (friendly, clear)",
+            "paper": "Academic tone (precise, rigorous)",
+            "explainer": "Explainer tone (accessible to newcomers)",
+        }
+        return f"""{idx_inst}
+Topic: {topic}
+Length: {word_map.get(length, '~700 words')}
+Style: {style_map.get(style, 'Blog tone')}
+
+Use accumulated wiki pages as sources.
+
+Requirements:
+- Every factual claim needs [^src-source-slug] inline citations
+- Reference related wiki pages with [[wikilink]]
+- Footnote definitions at bottom: [^src-*]: [[source-*]]
+- Introduction / body / conclusion
+- Do not invent topics lacking supporting sources in the wiki
+
+Output only the article (no meta commentary)."""
+
+    if operation == "compare":
+        proj = project_registry.get_project(kw.get("project_slug"))
+        page_a = kw.get("page_a", "")
+        page_b = kw.get("page_b", "")
+        return f"""Read wiki/{page_a} and wiki/{page_b}, then compare them.
+
+Structure:
+## Common ground
+## Differences
+## Relationship / implications
+
+Include [^src-*] citations for claims; draw on sources from both pages."""
+
+    return f"[operation={operation}]"
+
+
+def stream_lint(project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    prompt = _op_prompt_for("lint", project_slug=project_slug)
+    yield {"type": "progress", "phase": "starting", "message": "Starting lint…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    # Post-processing: run git commit if successful (after stream ends)
+    try:
+        git_mgr._stage_all(project=proj)
+        git_mgr._run("commit", "-m", f"lint{git_mgr._slug_prefix(proj)}: lint audit")
+    except Exception:
+        pass
+
+
+def stream_lint_fix(project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    yield {"type": "progress", "phase": "starting", "message": "Starting lint fix…", "elapsed": 0}
+    for evt in run_claude_streaming("""You just ran the CLAUDE.md Lint checklist. Fix every issue found now:
+
+- Fix missing/invalid frontmatter
+- Add [^src-*] to uncited claims when a source exists
+- Align source_count with actual citations
+- Bump last_updated to today where appropriate
+- Add inbound [[wikilink]] to orphan pages; add missing cross-links
+- Create stub pages for mentioned concepts without pages (min. one citation)
+- Fix status / superseded_by inconsistencies
+- Add ## Disputed where status demands it
+- Refresh wiki/index.md, wiki/log.md, wiki/overview.md as needed
+
+Summarize fixes by Critical / Warning / Info.""", project=proj):
+        yield evt
+    try:
+        git_mgr.commit_lint_fix(project=proj)
+    except Exception:
+        pass
+
+
+def stream_reflect(window="last-10-ingests", project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    prompt = _op_prompt_for("reflect", project_slug=project_slug, window=window)
+    yield {"type": "progress", "phase": "starting", "message": "Starting reflect…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    try:
+        git_mgr._stage_all(project=proj)
+        today = datetime.now().strftime("%Y-%m-%d")
+        git_mgr._run("commit", "-m", f"reflect{git_mgr._slug_prefix(proj)}: {today} ({window})")
+    except Exception:
+        pass
+
+
+def stream_review_refresh(filename, project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    prompt = _op_prompt_for("review_refresh", project_slug=project_slug, filename=filename)
+    yield {"type": "progress", "phase": "starting", "message": f"Refreshing {filename}…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    try:
+        git_mgr._stage_all(project=proj)
+        git_mgr._run("commit", "-m", f"review{git_mgr._slug_prefix(proj)}: refresh {filename}")
+    except Exception:
+        pass
+
+
+def stream_fix_citations(page_filename, project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    filepath = proj.wiki_dir / page_filename
+    if not filepath.exists():
+        yield {"type": "error", "message": "Page not found", "elapsed": 0}
+        return
+    prompt = _op_prompt_for("fix_citations", project_slug=project_slug, page=page_filename)
+    yield {"type": "progress", "phase": "starting", "message": f"Fixing citations in {page_filename}…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    try:
+        git_mgr._stage_all(project=proj)
+        git_mgr._run("commit", "-m", f"citation{git_mgr._slug_prefix(proj)}: fix {page_filename}")
+    except Exception:
+        pass
+
+
+def stream_ingest(title, content, folder="", project_slug=None):
+    proj = project_registry.get_project(project_slug)
+    raw_dir = proj.raw_dir
+    wiki_dir = proj.wiki_dir
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+
+    slug = make_slug(title)
+    raw_path = dedupe_raw_path(raw_dir / f"{slug}.md")
+    raw_path.write_text(content, encoding="utf-8")
+    slug = raw_path.stem
+
+    ts = datetime.now().strftime("%Y-%m-%d-%H%M")
+    report_rel = f"ingest-reports/{ts}-{slug}.md"
+    (proj.ingest_reports).mkdir(parents=True, exist_ok=True)
+
+    prompt = _op_prompt_for("ingest", project_slug=project_slug, title=title, content=content, folder=folder, slug=slug, report_rel=report_rel)
+    yield {"type": "progress", "phase": "starting", "message": f"Ingesting {slug}…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    try:
+        from index_strategy import rebuild_index
+        rebuild_index(wiki_dir)
+        c = git_mgr.commit_ingest(title, project=proj)
+        yield {"type": "post_action", "action": "commit", "hash": c.get("hash", ""), "elapsed": 0}
+    except Exception:
+        pass
+
+
+def stream_write(topic, length="medium", style="blog", project_slug=None):
+    if not topic or not topic.strip():
+        yield {"type": "error", "message": "Topic is required", "elapsed": 0}
+        return
+    proj = project_registry.get_project(project_slug)
+    prompt = _op_prompt_for("write", project_slug=project_slug, topic=topic, length=length, style=style)
+    yield {"type": "progress", "phase": "starting", "message": f"Writing: {topic}…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+
+
+def stream_compare(page_a, page_b, save_as="", project_slug=None):
+    if not page_a or not page_b:
+        yield {"type": "error", "message": "Both pages required", "elapsed": 0}
+        return
+    proj = project_registry.get_project(project_slug)
+    wiki_dir = proj.wiki_dir
+    fa = wiki_dir / page_a
+    fb = wiki_dir / page_b
+    if not fa.exists() or not fb.exists():
+        yield {"type": "error", "message": "Page not found", "elapsed": 0}
+        return
+    prompt = _op_prompt_for("compare", project_slug=project_slug, page_a=page_a, page_b=page_b)
+    yield {"type": "progress", "phase": "starting", "message": f"Comparing {page_a} vs {page_b}…", "elapsed": 0}
+    for evt in run_claude_streaming(prompt, project=proj):
+        yield evt
+    if save_as:
+        try:
+            target = wiki_dir / f"{make_slug(save_as)}.md"
+            n = 2
+            while target.exists():
+                target = wiki_dir / f"{make_slug(save_as)}-{n}.md"
+                n += 1
+            today = datetime.now().strftime("%Y-%m-%d")
+            fm = f"""---
+title: "{save_as}"
+type: comparison
+created: {today}
+last_updated: {today}
+sources: []
+tags:
+  - comparison
+---
+
+# {save_as}
+
+{save_as} comparison created via streaming."""
+            target.write_text(fm, encoding="utf-8")
+            git_mgr._stage_all(project=proj)
+            git_mgr._run("commit", "-m", f"compare{git_mgr._slug_prefix(proj)}: {save_as}")
+        except Exception:
+            pass
+
+
 QUERY_LOG = PROJECT_ROOT / "query-log.jsonl"
 
 
@@ -1042,6 +1622,7 @@ def check_status():
     return {
         "claude": {"connected": claude_ok, "version": claude_ver, "binary": SETTINGS.get("claude_cli_binary", "claude")},
         "ai_provider": SETTINGS.get("ai_provider", "cli"),
+        "cli_type": SETTINGS.get("cli_type", "claude"),
         "openai_configured": _openai_http_ready(),
         "obsidian": _read_obsidian_facts(),
         "llm_ui": _build_llm_ui(),
@@ -1069,6 +1650,7 @@ def diagnose_claude():
         "resolved_executable": "",
         "effective_path_preview": path_preview,
         "cli_path_extra_count": len(extra_dirs),
+        "cli_type": SETTINGS.get("cli_type", "claude"),
     }
 
     exe = get_claude_cli_executable()
@@ -2392,6 +2974,11 @@ def merge_dashboard_settings(body):
     """Apply optional dashboard keys from POST body; persist SETTINGS."""
     if not isinstance(body, dict):
         return {"ok": False, "error": "expected JSON object"}
+    if "cli_type" in body:
+        ct = (body.get("cli_type") or "claude").strip().lower()
+        if ct not in CLI_TYPES:
+            return {"ok": False, "error": f"Unknown cli_type: {ct}"}
+        SETTINGS["cli_type"] = ct
     if "claude_cli_binary" in body:
         SETTINGS["claude_cli_binary"] = (body.get("claude_cli_binary") or "claude").strip() or "claude"
     if "claude_cli_extra_args" in body:
@@ -2443,9 +3030,10 @@ def api_ai_test_connection():
 
 def api_cli_test():
     """Quick CLI probe — same resolution as ingest (PATH + cli_path_extra)."""
-    exe = get_claude_cli_executable()
+    exe = get_cli_executable()
     env = _cli_subprocess_env()
     hints = []
+    ct = SETTINGS.get("cli_type", "claude")
     cb = (SETTINGS.get("claude_cli_binary") or "").strip()
     if cb and os.path.sep not in cb:
         hints.append("Shell-only aliases are not visible here — use a wrapper script or absolute path.")
@@ -2461,11 +3049,13 @@ def api_cli_test():
                 "ok": True,
                 "resolved_executable": exe,
                 "version_line": ver,
+                "cli_type": ct,
                 "effective_path_preview": (env.get("PATH") or "")[:240],
             }
         return {
             "ok": False,
             "resolved_executable": exe,
+            "cli_type": ct,
             "error": (r.stderr or r.stdout or "")[:400],
             "hints": hints,
             "effective_path_preview": (env.get("PATH") or "")[:240],
@@ -2478,12 +3068,13 @@ def api_cli_test():
         return {
             "ok": False,
             "resolved_executable": exe,
+            "cli_type": ct,
             "error": f"Executable not found: {SETTINGS.get('claude_cli_binary', 'claude')}",
             "hints": hints + extra,
             "effective_path_preview": (env.get("PATH") or "")[:240],
         }
     except Exception as e:
-        return {"ok": False, "resolved_executable": exe, "error": str(e)[:400], "hints": hints}
+        return {"ok": False, "resolved_executable": exe, "cli_type": ct, "error": str(e)[:400], "hints": hints}
 
 
 def _iter_raw_project_files(proj):
@@ -2610,12 +3201,14 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(do_review_list(project_slug=q_project))
             if path == "/api/settings":
                 proj = _resolve_project(q_project)
+                cli_types_list = [{"id": k, "label": v.get("label", k), "default_binary": v.get("default_binary", ""), "wrapper_prefix": v.get("wrapper_prefix", "")} for k, v in CLI_TYPES.items()]
                 return self._json({
                     "settings": _settings_for_response(),
                     "project_model": proj.model if not proj.is_legacy else SETTINGS.get("model", "default"),
                     "project_slug": proj.slug,
                     "models": AVAILABLE_MODELS,
                     "http_presets": HTTP_PRESETS,
+                    "cli_types": cli_types_list,
                     "llm_ui": _build_llm_ui(),
                 })
             if path == "/api/reflect/status":
@@ -2694,6 +3287,23 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(do_compare(body.get("page_a", ""), body.get("page_b", ""), body.get("save_as", ""), project_slug=p_slug))
             if path == "/api/review/refresh":
                 return self._json(do_review_refresh(body.get("filename", ""), project_slug=p_slug))
+            # ─── SSE Streaming Endpoints ───
+            if path == "/api/lint/stream":
+                return _handle_stream(self, stream_lint(project_slug=p_slug))
+            if path == "/api/lint/fix/stream":
+                return _handle_stream(self, stream_lint_fix(project_slug=p_slug))
+            if path == "/api/reflect/stream":
+                return _handle_stream(self, stream_reflect(body.get("window", "last-10-ingests"), project_slug=p_slug))
+            if path == "/api/review/refresh/stream":
+                return _handle_stream(self, stream_review_refresh(body.get("filename", ""), project_slug=p_slug))
+            if path == "/api/provenance/fix/stream":
+                return _handle_stream(self, stream_fix_citations(body.get("page", ""), project_slug=p_slug))
+            if path == "/api/ingest/stream":
+                return _handle_stream(self, stream_ingest(body.get("title", ""), body.get("content", ""), body.get("folder", ""), project_slug=p_slug))
+            if path == "/api/write/stream":
+                return _handle_stream(self, stream_write(body.get("topic", ""), body.get("length", "medium"), body.get("style", "blog"), project_slug=p_slug))
+            if path == "/api/compare/stream":
+                return _handle_stream(self, stream_compare(body.get("page_a", ""), body.get("page_b", ""), body.get("save_as", ""), project_slug=p_slug))
             if path == "/api/slides":
                 return self._json(do_slides(body.get("page", ""), project_slug=p_slug))
             if path == "/api/search":
@@ -2710,7 +3320,7 @@ class Handler(SimpleHTTPRequestHandler):
                 ))
             if path == "/api/settings":
                 _AI_KEYS = (
-                    "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra", "ai_provider",
+                    "cli_type", "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra", "ai_provider",
                     "openai_base_url", "openai_model", "openai_api_key",
                     "http_temperature", "http_max_tokens",
                     "active_ai_profile", "ai_profiles",
@@ -2821,7 +3431,25 @@ class Handler(SimpleHTTPRequestHandler):
         except BrokenPipeError:
             pass
 
-    def do_OPTIONS(self):
+    def _sse_start(self):
+        """Send SSE response headers."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+    def _sse_send(self, event_dict):
+        """Send a single SSE event. Raises BrokenPipeError on disconnect."""
+        data = _sse_data(event_dict).encode("utf-8")
+        self.wfile.write(data)
+        self.wfile.flush()
+
+    def _sse_end(self):
+        """Send final SSE marker to signal completion."""
+        self._sse_send({"type": "__end__"})
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
