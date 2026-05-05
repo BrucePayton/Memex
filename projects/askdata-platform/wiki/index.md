@@ -1,3 +1,7 @@
+---
+title: AskData Platform Wiki Index
+type: index
+---
 
 # AskData Platform Wiki
 
@@ -12,6 +16,7 @@
 - [外部资源管理功能设计与实现](外部资源管理功能设计与实现.md)
 - [外部资源管理功能实现进度与现状分析](外部资源管理功能实现进度与现状分析.md)
 - [LLM Provider 多供应商体系建设规划](askdata-platform/llm-provider-多供应商体系-参考-dify-model-runtime-的建设规划.md)
+- [成果物文本自适应与导出能力建设规划](askdata-platform/成果物文本自适应与导出能力建设规划.md)
 
 ## 性能优化
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
@@ -29,4 +34,3 @@
 
 ## DSC Platform
 - [DSC Platform 项目概述](dsc-platform-项目概述.md)
-
