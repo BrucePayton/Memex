@@ -21,6 +21,9 @@ type: index
 ## 性能优化
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
 
+## Debug
+- [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
+
 ## AskData Platform 子模块
 - [askdata-orchestrator-优化规划](askdata-platform/askdata-orchestrator-优化规划.md)
 - [askdata-开发工作流现状分析](askdata-platform/askdata-开发工作流现状分析.md)
