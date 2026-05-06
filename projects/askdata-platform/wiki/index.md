@@ -1,5 +1,5 @@
 ---
-title: AskData Platform Wiki Index
+title: "AskData Platform Wiki Index"
 type: index
 ---
 
@@ -23,6 +23,7 @@ type: index
 
 ## Debug
 - [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
+- [历史会话加载卡死 — useEffect 循环重载与主线程阻塞](askdata-platform/Debug/历史会话加载卡死-useeffect-循环重载与主线程阻塞.md)
 
 ## AskData Platform 子模块
 - [askdata-orchestrator-优化规划](askdata-platform/askdata-orchestrator-优化规划.md)
