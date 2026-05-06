@@ -1,21 +1,16 @@
 ---
-title: "Wiki 页面跳转崩溃 - Cannot read properties of undefined (reading 'find')"
+title: Wiki 页面跳转崩溃 - missing availablePages prop
 type: analysis
-created: 2026-05-06
-last_updated: 2026-05-06
-source_count: 0
-confidence: medium
-status: active
-tags:
-  - wiki
-  - frontend
-  - crash
-  - typescript
+tags: ["wiki", "frontend", "crash", "typescript"]
 ---
 
 ## 故障概述
 
-用户在知识库管理页面选择知识库后，进入 "Wiki 知识库" Tab，点击 "查看 Wiki" 按钮时页面崩溃，显示 "页面加载失败" 和错误信息 `Cannot read properties of undefined (reading 'find')`。
+用户在知识库管理页面选择知识库后，进入 "Wiki 知识库" Tab，点击 "查看 Wiki" 按钮时页面崩溃，显示 "页面加载失败"。
+
+先后出现两个错误：
+1. `Cannot read properties of undefined (reading 'find')` — **WikiPageCompare**
+2. `Cannot read properties of undefined (reading 'length')` — **WikiComposeDialog**
 
 ## 触发路径
 
@@ -26,32 +21,44 @@ tags:
 
 ## Root Cause
 
-`WikiManagementPage` 渲染了 `<WikiPageCompare>` 组件但未传入必需的 `availablePages` prop：
+`WikiManagementPage` 在渲染 dialog 组件时，其中两个组件缺少必需的 `availablePages` prop，而组件内部直接在该 prop 上调用数组方法（`.find()` / `.length`），导致 `TypeError`。
+
+### Bug 1: WikiPageCompare（.find）
 
 ```tsx
-// WikiManagementPage.tsx:756 — 缺少 availablePages
+// WikiManagementPage.tsx — 缺失 availablePages
 <WikiPageCompare open={compareOpen} onOpenChange={setCompareOpen} />
+
+// WikiPageCompare.tsx — 直接调用 .find()
+const pageA = availablePages.find(p => p.id === Number(pageAId));
 ```
 
-而 `WikiPageCompare` 内部直接对该 prop 调用 `.find()`：
+### Bug 2: WikiComposeDialog（.length）
 
 ```tsx
-// WikiPageCompare.tsx:50-51
-const pageA = availablePages.find(p => p.id === Number(pageAId));
-const pageB = availablePages.find(p => p.id === Number(pageBId));
+// WikiManagementPage.tsx — 同样是缺失 availablePages
+<WikiComposeDialog open={composeOpen} onOpenChange={setComposeOpen} />
+
+// WikiComposeDialog.tsx — 直接调用 .length
+{availablePages.length === 0 ? ( ... ) : ( ... )}
 ```
 
-`availablePages` 为 `undefined` → `undefined.find()` 抛出 `TypeError`。
+两个 dialog 组件在渲染时即使 `open=false`，React 仍会执行组件函数体，因此对 `undefined` 的 prop 的数组方法调用在挂载瞬间就崩溃。
 
-该错误被 `ProtectedRoute` 中的 `DataProviderErrorBoundary` 捕获，展示 "页面加载失败" 错误 UI。
+错误被 `ProtectedRoute` 中的 `DataProviderErrorBoundary` 捕获，展示 "页面加载失败" 错误 UI。第一个错误修复后，刷新页面再次导航会暴露第二个错误。
 
 ## 修复方案
 
-### 文件 1: `web/src/features/wiki/pages/WikiManagementPage.tsx`
+### `WikiManagementPage.tsx:755-756`
 
-补传 `availablePages` prop，从组件内已加载的 `pages` state 提取：
+补传 `availablePages` 给两个 dialog，从已加载的 `pages` state 提取：
 
 ```tsx
+<WikiComposeDialog
+  open={composeOpen}
+  onOpenChange={setComposeOpen}
+  availablePages={pages.map(p => ({ id: p.id, title: p.title }))}
+/>
 <WikiPageCompare
   open={compareOpen}
   onOpenChange={setCompareOpen}
@@ -59,22 +66,25 @@ const pageB = availablePages.find(p => p.id === Number(pageBId));
 />
 ```
 
-### 文件 2: `web/src/features/wiki/components/WikiPageCompare.tsx`
+### `WikiPageCompare.tsx:18 + WikiComposeDialog.tsx:20`
 
-添加默认值 `[]` 做防御，防止其他调用方同样遗漏：
+添加默认值 `[]` 做防御：
 
 ```tsx
+// 两个组件相同模式
 export default function WikiPageCompare({ open, onOpenChange, availablePages = [] }: WikiPageCompareProps) {
+export default function WikiComposeDialog({ open, onOpenChange, availablePages = [] }: WikiComposeDialogProps) {
 ```
 
 ## 涉及文件
 
-- `web/src/features/wiki/pages/WikiManagementPage.tsx:756` — 补传 prop
-- `web/src/features/wiki/components/WikiPageCompare.tsx:18` — 默认值防御
+- `web/src/features/wiki/pages/WikiManagementPage.tsx:755-756` — 补传 availablePages
+- `web/src/features/wiki/components/WikiPageCompare.tsx:18` — 默认值 `[]`
+- `web/src/features/wiki/components/WikiComposeDialog.tsx:20` — 默认值 `[]`
 
 ## 经验教训
 
-1. **TypeScript 接口强制要求但运行时无法保证**：`WikiPageCompareProps.availablePages` 声明为 `{ id: number; title: string }[]`（非可选），但父组件调用时遗漏导致运行时崩溃。应优先使用默认值或运行时校验。
-2. **Dialog 组件也会执行顶层代码**：即使 dialog 的 `open` 为 `false`，组件内的顶层 `.find()` 调用仍会在每次渲染时执行，因此不能依赖 dialog 的状态来保护数据访问。
-3. **防御性编程**：对可能来自父组件的数组 props 始终提供默认值 `= []`，避免 `.find()`、`.map()`、`.filter()` 等调用崩溃。
-
+1. **同一条枪连续走火两次**：`WikiPageCompare` 和 `WikiComposeDialog` 都是同一个反模式——`availablePages` prop 必填但未传入。说明类似问题应举一反三，检查所有 dialog 组件。
+2. **Dialog 组件也会执行顶层代码**：即使 `open=false`，组件函数体内的顶层 `.find()` / `.length` 调用仍会在每次渲染时执行，不能依赖 dialog 的开关状态做保护。
+3. **防御性编程**：对来自父组件的数组 props 始终提供默认值 `= []`，这是最低成本的防崩溃手段。
+4. **检修清单**：`WikiManagementPage` 中所有无条件渲染的子组件（`WikiQueryDialog`、`WikiComposeDialog`、`WikiPageCompare`、`WikiWriteDialog`）都应检查其 props 接口，确保不缺少必填项。
