@@ -1,11 +1,6 @@
 ---
 title: "历史会话加载卡死 - useEffect 循环重载与主线程阻塞"
 type: analysis
-created: 2026-05-06
-last_updated: 2026-05-06
-source_count: 0
-confidence: medium
-status: active
 tags:
   - askdata
   - frontend
@@ -13,6 +8,11 @@ tags:
   - history
   - useEffect
   - performance
+created: "2026-05-06"
+last_updated: "2026-05-06"
+source_count: "0"
+confidence: medium
+status: active
 ---
 
 ## 故障概述
@@ -58,6 +58,30 @@ history 加载的 `useEffect` 依赖中包含 `analysisSessions.length`。流式
 
 `updateAnalysisSession` 在流式过程中被多次调用（line 2933、3032、3281 等），每次调用都创建新的 `analysisSessions` 数组引用，通过 `DataContext` 传播导致所有 consumer 重渲染。
 
+## Release 分支对比
+
+### 对比对象
+
+`dev_bruce`（HEAD `e1f98af5`） vs `origin/release/pajf_v1.0.1`（`296ad734`）
+
+### 逐文件对比结果
+
+| 文件 | 是否有差异 | 差异说明 |
+|------|-----------|---------|
+| `QueryAnalysisChat.tsx` | 85 行差异 | `cacheBustDashboardEmbedUrl` 提取、`DEBUG_REACT185_GUARD`、workspaceId URL 防重入、dashboard embed 合并。**未触及历史加载逻辑** |
+| `DataProvider.tsx` | **无差异** | 完全一致 |
+| `stream_persist.py` | **无差异** | 完全一致 |
+| `historyExpand.ts` | **无差异** | 完全一致 |
+| `core/server/app.py` | **无差异** | 完全一致 |
+| `askdata.api.ts` | 有差异 | 流式 SSE 错误处理增强，不影响历史记录 |
+| `views.py` | 有差异 | `_askdata_unauthorized_response()` 提取 + 流式入口日志增强，不影响历史记录 |
+| `client.ts` / `authFetch.ts` | 有差异 | session 过期 / 401 处理重构，不影响历史记录 |
+| `ProtectedRoute.tsx` | 有差异 | ACL 权限判定前置 + useMemo，不影响历史记录 |
+
+### 核心结论
+
+**历史会话加载的核心逻辑在两个分支上完全一致，不存在冲突。** release 版本实际验证不存在卡死问题，说明卡死为**运行时条件触发**（特定 session 数据量、payload 大小、网络环境等），而非代码逻辑差异。
+
 ## 涉及的代码位置
 
 ### 前端
@@ -81,7 +105,7 @@ history 加载的 `useEffect` 依赖中包含 `analysisSessions.length`。流式
 | `core/server/app.py` | 2008-2018 | `finally` 块中 `aget_state()` 潜在阻塞 |
 | `core/models/db/db_initial_models.py` | 2041-2045 | 缺少 `(session_id, workspace_id, user_id, turn_index)` 复合索引 |
 
-## 修复方案
+## 修复方案（提交 `f4ebdae7`）
 
 ### 修复 1（关键）：替换 `analysisSessions.length` 为一次性 `analysisSessionsReady` 标记
 
@@ -125,12 +149,17 @@ style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
 - 后端 `stream_persist.py` 默认 limit 从 50 降到 30
 - 前端硬编码 `limit: 50` 同步降到 `limit: 30`
 
+### 修复 6：添加复合索引
+
+- 在 `AskDataChatHistory.__table_args__` 中新增 `Index("ix_t_askdata_chat_history_query", "session_id", "workspace_id", "user_id", "turn_index")`
+
 ## 排查过程
 
 1. **确认现象**：卡死时前端控制台无报错，说明不是 JS 异常崩溃，而是主线程阻塞或无限循环
 2. **使用 React DevTools Profiler**：发现 history 加载 useEffect 在流式过程中被反复触发
 3. **console.time 打点**：`processSingleRowWithExpand` 处理 50 行消耗 300-800ms
 4. **依赖分析**：发现 `analysisSessions.length` 是"元凶"——流式过程中每次 `addAnalysisSession` 都触发 reload
+5. **Release 分支对比**：逐文件比对确认历史加载逻辑完全一致，无冲突；卡死为运行时条件触发
 
 ## 预防措施
 
@@ -143,4 +172,3 @@ style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
 
 - [历史会话加载性能优化](../性能优化/历史会话加载性能优化.md) — 上一轮优化记录
 - [AskData 架构设计](../../askdata-架构设计.md)
-
