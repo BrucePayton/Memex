@@ -35,7 +35,7 @@
       "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
       "model": "default",
       "created": "2026-05-02",
-      "last_used": "2026-05-04",
+      "last_used": "2026-05-07",
       "template": "llm-research"
     },
     {
@@ -62,7 +62,7 @@
       "description": "专门用来进行行业分类标准的知识维护",
       "model": "default",
       "created": "2026-05-04",
-      "last_used": "2026-05-04",
+      "last_used": "2026-05-06",
       "template": "llm-research"
     }
   ]
