@@ -2,11 +2,11 @@
 title: Changelog
 type: log
 ---
-
 # Changelog
 
 | Date | Source | Summary |
 |------|--------|---------|
+| 2026-05-07 | 前端开发 | 平台配置前端功能缺失识别与实现：完成 LLM 配置、Claw Code、平台配置入口的完整前端实现，包括 API 封装、页面组件、路由与权限配置 |
 | 2026-05-07 | 部署修复 | nginx配置重复指令问题彻底解决：移除include模式，每个location显式配置所有proxy指令，避免proxy_buffering/proxy_read_timeout等重复错误 |
 | 2026-05-07 | 开发修复 | Wiki Memex 对标优化 Phase 1-4 完成：RAW 文件展示、路由守卫、返回导航、页面列表一致性、文档数量、Wiki 统计、工具栏折叠、健康指示器、LLM 连通性检测 |
 | 2026-05-04 | 代码库扫描 | 内容层报告生成功能问题分析：发现核心实现完整但API路由未注册的关键问题 |
