@@ -28,6 +28,7 @@
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
 
 ## Debug
+- [Claw Code 控制面板 Loader2 报错修复与配置体系重构](askdata-platform/Debug/claw-code-控制面板-loader2-报错修复与配置体系重构.md)
 - [React const 暂时性死区导致 Cannot access before initialization 错误排查](askdata-platform/Debug/react-const-暂时性死区导致-cannot-access-before-initialization-错误排查.md)
 - [平台多问题修复（路由/通知/模板/外部资源/Claw）](askdata-platform/Debug/平台多问题修复与功能增强路由通知模板外部资源claw.md)
 - [平台配置模块迁移侧边栏系统管理及权限修复](askdata-platform/Debug/平台配置模块迁移侧边栏系统管理及权限修复.md)
