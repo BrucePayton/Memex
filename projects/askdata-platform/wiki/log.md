@@ -2,8 +2,10 @@
 
 | Date | Source | Summary |
 |------|--------|---------|
+| 2026-05-09 | 前端开发 | **Wiki Dashboard 功能完善**：补齐 12 个待实现视图（Browse/Health/Raw/History/Logs/Query/Review/Compare/Write/Ingest/Schema/Guide），新增 LLM/Claw Code 执行模式切换（localStorage 持久化），新增 5 个 API 封装 [^src-2026-05-09-platform-feature-completion] |
+| 2026-05-09 | 综合修复 | **平台多问题修复**：Wiki 404 路由修复、领域配置/Provider 路由挂载、通知中心事件驱动启用（快照/数据源/Wiki 同步/启动）、领域模板静态→动态聚合重构、外部资源管理 Tab 重构、Claw Code 配置面板 |
 | 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：`web/src/app/routes/index.tsx` 存在孤儿 `</Suspense>` 和 `} />` 标签（第 153-154 行），破坏 JSX 解析树，删除后构建恢复正常 |
-| 2026-05-08 | 外部资源管理 | 外部资源管理功能补全：实现平台注册管理 API（GET/POST/PATCH/DELETE /wp/platforms + POST /wp/platforms/{id}/discover），补全平台适配器源代码（Dify/DSC/SkillHub 适配器），新增前端平台管理页面与路由，统一资源类型定义（新增 skill/workflow 类型）[^src-2026-05-08-外部资源管理功能补全开发记录] |
+| 2026-05-08 | 外部资源管理 | 外部资源管理功能补全：实现平台注册管理 API（GET/POST/PATCH/DELETE /wp/platforms + POST /wp/platforms/{id}/discover），补全平台适配器源代码（Dify/DSC/SkillHub 适配器），新增前端平台管理页面与路由，统一资源类型定义（新增 skill/workflow 类型） |
 | 2026-05-08 | 前端调试 | React const 暂时性死区导致 Cannot access before initialization 错误排查：`useCallback` 引用 `useState` 变量但定义在其之前，触发了 const 的 temporal dead zone，导致知识库模块路由懒加载失败 |
 | 2026-05-08 | 开发修复 | 平台配置模块迁移侧边栏系统管理及权限修复：后端 page_group_defaults.py 新增 PlatformConfig/LlmConfig/Claw/DomainConfig 页面组定义（parent_menu=system_management）；前端移除侧边栏隐藏逻辑、补充路由权限完整性、首页移除平台配置卡片 |
 | 2026-05-07 | 数据库迁移 | 补全 17 张缺失数据库表：通过 `alembic revision --autogenerate` 生成新 revision `0a2119b5be45`，创建 DomainConfig、MCP、Wiki、LLM Config 等 17 张缺失表（Claw-Code 集成模块），同时补全已有表的 ADD COLUMN 变更。审阅中排除了 LangGraph checkpoint 表 DROP 和 FK 约束重建等多余操作 |
