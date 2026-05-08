@@ -1,8 +1,3 @@
----
-title: AskData Platform Wiki Index
-type: index
----
-
 # AskData Platform Wiki
 
 ## 架构设计
@@ -10,6 +5,7 @@ type: index
 - [Free-Style-Report 项目总览](free-style-report-项目总览.md)
 - [AskData 技术栈](askdata-技术栈.md)
 - [AskData 核心模块](askdata-核心模块.md)
+- [外部资源管理模块架构](askdata-platform/外部资源管理模块架构.md)
 
 ## 功能规划
 - [Domain Config 功能规范](Domain-Config功能规范.md)
@@ -27,6 +23,7 @@ type: index
 - [数据库迁移补全 17 张缺失表](askdata-platform/Debug/数据库迁移补全-17-张缺失表排查记录.md)
 - [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
 - [Wiki 知识库 Memex 对标优化 Phase 1-4 实现记录](askdata-platform/Debug/wiki-知识库-memex-对标优化-phase-1-4-实现记录.md)
+- [Wiki MCP Handler Bug 修复与 Memex 对标](askdata-platform/Debug/wiki-mcp-handler-bug-修复与-memex-对标.md)
 - [历史会话加载卡死 — useEffect 循环重载与主线程阻塞](askdata-platform/Debug/历史会话加载卡死-useeffect-循环重载与主线程阻塞.md)
 - [平台配置前端功能缺失识别与实现](askdata-platform/Debug/平台配置前端功能缺失识别与实现.md)
 - [Nginx 配置重复指令导致启动失败](askdata-platform/Debug/nginx配置重复指令导致启动失败问题排查.md)

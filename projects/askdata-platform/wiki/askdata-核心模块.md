@@ -1,17 +1,3 @@
----
-title: "AskData 核心模块"
-type: concept
-created: 2026-05-02
-last_updated: 2026-05-02
-source_count: 0
-confidence: medium
-status: active
-tags:
-  - askdata-platform
-  - modules
-  - 核心模块
----
-
 # AskData 核心模块
 
 ## 1. AskData 问数分析模块
@@ -64,6 +50,7 @@ tags:
 - Chroma/pgvector 向量存储
 - RAG 检索增强
 - 知识库挂载管理
+- Wiki 知识库管理（分级文件夹、AI 增强、版本管理）
 
 ## 4. 报告模块 (Report)
 
@@ -114,6 +101,17 @@ Stage 1: 数据收集 → Stage 2: 分析 → Stage 3: 内容生成 → Stage 4:
 ## 7. 工作区模块 (Workspace)
 
 `core/modules/workspace/` — 多租户工作空间管理。
+
+### 核心能力
+
+- 工作空间 CRUD + 标签管理
+- 资源挂载/卸载/批量操作
+- 资源关联关系管理（知识库 ↔ 数据库）
+- 外部资源注册管理（Agent/MCP/Skill/Workflow）
+- 平台注册管理（Dify/DSC/Skill Hub）+ 资源自动发现
+- 平台适配器层（`core/helpers/platforms/`）：Dify/DSC/SkillHub 适配器
+
+详见 [外部资源管理模块架构](askdata-platform/外部资源管理模块架构.md)。
 
 ## 8. 执行引擎模块 (Executor)
 
