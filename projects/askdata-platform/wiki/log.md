@@ -7,6 +7,7 @@ type: log
 
 | Date | Source | Summary |
 |------|--------|---------|
+| 2026-05-08 | 前端调试 | React const 暂时性死区导致 Cannot access before initialization 错误排查：`useCallback` 引用 `useState` 变量但定义在其之前，触发了 const 的 temporal dead zone，导致知识库模块路由懒加载失败 |
 | 2026-05-08 | 开发修复 | 平台配置模块迁移侧边栏系统管理及权限修复：后端 page_group_defaults.py 新增 PlatformConfig/LlmConfig/Claw/DomainConfig 页面组定义（parent_menu=system_management）；前端移除侧边栏隐藏逻辑、补充路由权限完整性、首页移除平台配置卡片 |
 | 2026-05-07 | 数据库迁移 | 补全 17 张缺失数据库表：通过 `alembic revision --autogenerate` 生成新 revision `0a2119b5be45`，创建 DomainConfig、MCP、Wiki、LLM Config 等 17 张缺失表（Claw-Code 集成模块），同时补全已有表的 ADD COLUMN 变更。审阅中排除了 LangGraph checkpoint 表 DROP 和 FK 约束重建等多余操作 |
 | 2026-05-07 | 前端开发 | MainSide通知中心功能恢复：代码回归后重建完整通知功能，包括API客户端扩展、NotificationBell组件创建、MainSidebar集成，支持未读计数、标记已读、删除、分页加载、30秒轮询等 |

@@ -22,6 +22,7 @@ type: index
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
 
 ## Debug
+- [React const 暂时性死区导致 Cannot access before initialization 错误排查](askdata-platform/Debug/react-const-暂时性死区导致-cannot-access-before-initialization-错误排查.md)
 - [平台配置模块迁移侧边栏系统管理及权限修复](askdata-platform/Debug/平台配置模块迁移侧边栏系统管理及权限修复.md)
 - [数据库迁移补全 17 张缺失表](askdata-platform/Debug/数据库迁移补全-17-张缺失表排查记录.md)
 - [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
