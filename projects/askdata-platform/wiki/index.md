@@ -21,6 +21,9 @@
 - [Wiki 知识库 Memex 对标优化 Phase 1-4](askdata-platform/Debug/wiki-知识库-memex-对标优化-phase-1-4-实现记录.md)
 - [Wiki MCP Handler Bug 修复与 Memex 对标](askdata-platform/Debug/wiki-mcp-handler-bug-修复与-memex-对标.md)
 
+## 部署与运维
+- [ACR AMD64 镜像迁移与统一版本标记经验总结](askdata-platform/acr-amd64-镜像迁移与统一版本标记经验总结.md)
+
 ## 性能优化
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
 

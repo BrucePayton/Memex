@@ -2,7 +2,8 @@
 
 | Date | Source | Summary |
 |------|--------|---------|
-| 2026-05-09 | 功能开发 | **Wiki 知识库功能完整集成（5 阶段）**：KB 详情 Tab 重构（向量/Wiki 切换）、绑定自动创建 Wiki 文件夹、新增 4 个管理 Tab（RAW Sources/Compare/Stale Review/Compose）、预处理步骤推 Wiki 开关、工作空间 Q&A/分析结果沉淀到 Wiki。新增迁移 `add_wiki_folder_id_to_binding`，修复 wiki/index.ts 泛型类型参数缺失 [^src-wiki-知识库功能完整集成-实现记录] |
+| 2026-05-09 | 重构/架构 | **LLM 调用统一入口重构 — ScopeConfig → LLMConfig**：修复 `LLMParamsUtils` 静默降级，补齐 `LLMConfig` 缺失方法，迁移 `utils/llms/llm.py` 的 10 个 dashboard collab 调用点到 `LLMConfig()`，合并 4 份 report agent `LLMConfig` dataclass 为共享基类，修复 3 个断掉的调用者，添加 env var 覆盖支持 [^src-llm-call-unification-summary] |
+| 2026-05-09 | 功能开发 | **Wiki 知识库功能完整集成（5 阶段）**：KB 详情 Tab 重构（向量/Wiki 切换）、绑定自动创建 Wiki 文件夹、新增 4 个管理 Tab（RAW Sources/Compare/Stale Review/Compose）、预处理步骤推 Wiki 开关、工作空间 Q&A/分析结果沉淀到 Wiki。新增迁移 `add_wiki_folder_id_to_binding`，修复 wiki/index.ts 泛型类型参数缺失 |
 | 2026-05-09 | 前端开发 | **Wiki Dashboard 功能完善**：补齐 12 个待实现视图（Browse/Health/Raw/History/Logs/Query/Review/Compare/Write/Ingest/Schema/Guide），新增 LLM/Claw Code 执行模式切换（localStorage 持久化），新增 5 个 API 封装 |
 | 2026-05-09 | 综合修复 | **平台多问题修复**：Wiki 404 路由修复、领域配置/Provider 路由挂载、通知中心事件驱动启用（快照/数据源/Wiki 同步/启动）、领域模板静态→动态聚合重构、外部资源管理 Tab 重构、Claw Code 配置面板 |
 | 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：孤儿 `</Suspense>` 和 `} />` 标签破坏 JSX 解析树 |
