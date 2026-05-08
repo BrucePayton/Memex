@@ -14,9 +14,12 @@
 - [LLM Provider 多供应商体系建设规划](askdata-platform/llm-provider-多供应商体系-参考-dify-model-runtime-的建设规划.md)
 - [成果物文本自适应与导出能力建设规划](askdata-platform/成果物文本自适应与导出能力建设规划.md)
 
-## Wiki Dashboard
+## Wiki 知识库
+- [Wiki 知识库功能完整集成（5 阶段实现）](askdata-platform/wiki-知识库功能完整集成.md)
 - [Wiki Dashboard 功能完善（12 视图补齐与执行模式配置）](askdata-platform/Wiki%20Dashboard/wiki-dashboard-功能完善12-视图补齐与执行模式配置.md)
-- [Wiki Dashboard 对齐 — Canvas 知识图谱渲染与 Phase 3 视图实现](askdata-platform/Wiki%20Dashboard/wiki-dashboard-对齐-canvas-知识图谱渲染与-phase-3-视图实现.md)
+- [Wiki 知识库绑定 404 故障复盘](askdata-platform/wiki-知识库绑定-404-故障复盘.md)
+- [Wiki 知识库 Memex 对标优化 Phase 1-4](askdata-platform/Debug/wiki-知识库-memex-对标优化-phase-1-4-实现记录.md)
+- [Wiki MCP Handler Bug 修复与 Memex 对标](askdata-platform/Debug/wiki-mcp-handler-bug-修复与-memex-对标.md)
 
 ## 性能优化
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
@@ -27,8 +30,6 @@
 - [平台配置模块迁移侧边栏系统管理及权限修复](askdata-platform/Debug/平台配置模块迁移侧边栏系统管理及权限修复.md)
 - [数据库迁移补全 17 张缺失表](askdata-platform/Debug/数据库迁移补全-17-张缺失表排查记录.md)
 - [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
-- [Wiki 知识库 Memex 对标优化 Phase 1-4 实现记录](askdata-platform/Debug/wiki-知识库-memex-对标优化-phase-1-4-实现记录.md)
-- [Wiki MCP Handler Bug 修复与 Memex 对标](askdata-platform/Debug/wiki-mcp-handler-bug-修复与-memex-对标.md)
 - [历史会话加载卡死 — useEffect 循环重载与主线程阻塞](askdata-platform/Debug/历史会话加载卡死-useeffect-循环重载与主线程阻塞.md)
 - [平台配置前端功能缺失识别与实现](askdata-platform/Debug/平台配置前端功能缺失识别与实现.md)
 - [Nginx 配置重复指令导致启动失败](askdata-platform/Debug/nginx配置重复指令导致启动失败问题排查.md)
@@ -44,9 +45,9 @@
 - [claw-code-作为-askdata-原生服务集成分析](askdata-platform/claw-code-作为-askdata-原生服务集成分析.md)
 - [claw-code-作为-askdata-驾驭框架可行性分析](askdata-platform/claw-code-作为-askdata-驾驭框架可行性分析.md)
 - [memex-cli-对接模式分析与-askdata-借鉴](askdata-platform/memex-cli-对接模式分析与-askdata-借鉴.md)
-- [Wiki 知识库绑定 404 故障复盘](askdata-platform/wiki-知识库绑定-404-故障复盘.md)
 - [内容层报告生成功能问题分析](内容层报告生成功能问题分析.md)
 - [Claw Code 与 FSR 集成现状 — 对照 wiki 分析的偏差分析](askdata-platform/claw-code-与-fsr-集成现状-对照-wiki-分析的偏差分析.md)
+- [领域模板管理](askdata-platform/领域模板管理.md)
 
 ## DSC Platform
 - [DSC Platform 项目概述](dsc-platform-项目概述.md)

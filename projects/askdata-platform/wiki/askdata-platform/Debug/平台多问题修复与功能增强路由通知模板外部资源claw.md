@@ -1,26 +1,6 @@
----
-title: "平台多问题修复与功能增强（路由/通知/模板/外部资源/Claw）"
-type: analysis
-created: 2026-05-09
-last_updated: 2026-05-09
-source_count: 1
-confidence: medium
-status: active
-tags:
-  - bug-fix
-  - routing
-  - notification-center
-  - domain-template
-  - external-resources
-  - claw-code
-  - 2026-05
-sources:
-  - src-2026-05-09-platform-feature-completion-and-wiki-dashboard-enhancement
----
-
 ## 概述
 
-本次修复和增强覆盖 7 个已知问题，按严重程度从 P0（阻塞级 404）到 P3（UI 优化）依次修复，并启用通知中心。
+本次修复和增强覆盖多个已知问题与功能优化。
 
 [^src-0]: 原始变更记录参考 raw source
 
@@ -68,12 +48,14 @@ sources:
 
 ---
 
-## Claw Code 配置面板
+## Claw Code 配置面板（历史）
 
 - 平台配置页新增 Claw Code 入口卡片（`<Terminal />` 图标，emerald 色）
 - Claw Dashboard 新增"配置"Tab：ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 表单字段
 - 后端：`POST /api/claw/config`（保存到 `.claw.json`）和 `POST /api/claw/test-connection`（HTTP POST 到 `/chat/completions`）
 - 返回按钮改为智能导航：`history.length > 2 ? navigate(-1) : navigate(ROUTES.HOME)`
+
+> **注意**: Claw 配置面板已于 2026-05-09 重构，不再手动填 ANTHROPIC_* 参数，改为选择项目已配置的 LLM 类型（basic/reasoning/vision），与项目统一 LLM 体系打通。详见 [Claw Code 控制面板 Loader2 报错修复与配置体系重构](https://github.com/anthropics/claude-code/issues/new) [^src-2026-05-09-claw-dashboard-loader2-fix-and-config-refactor]
 
 ## 提交历史
 
@@ -82,7 +64,8 @@ sources:
 | `db211183` | 路由修复 + 领域模板重构 |
 | `ca6a740d` | 通知中心启用 + Wiki 增强 |
 | `239ef7de` | 外部资源 Tab 重构 |
-| `eae5a353` | Claw Code 配置面板 |
+| `eae5a353` | Claw Code 配置面板（初始版） |
+| `189ae2fd` | Claw 配置面板重构：Loader2 修复 + LLM 体系打通 |
 
 [^src-0]: projects/askdata-platform/raw/2026-05-09-platform-feature-completion-and-wiki-dashboard-enhancement.md
-
+[^src-2026-05-09-claw-dashboard-loader2-fix-and-config-refactor]: projects/askdata-platform/raw/2026-05-09-claw-dashboard-loader2-fix-and-config-refactor.md
