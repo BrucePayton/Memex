@@ -2,6 +2,7 @@
 
 | Date | Source | Summary |
 |------|--------|---------|
+| 2026-05-09 | 前端开发 | **Wiki Dashboard Canvas 知识图谱 + Phase 3 视图补齐**：KnowledgeGraph 从 SVG 重写为 Canvas 2D（Memex TC 色值、d3-force 物理引擎、rAF 渲染、拖拽/平移/缩放/悬停、虚线边框 missing 节点、图例），新增 LintView/ReflectView/ProvenanceView/SearchView/SettingsView 5 个实装视图，knowledgeBaseId 状态透传，清理 WikiManagementPage 孤儿代码 |
 | 2026-05-09 | 前端开发 | **Wiki Dashboard 功能完善**：补齐 12 个待实现视图（Browse/Health/Raw/History/Logs/Query/Review/Compare/Write/Ingest/Schema/Guide），新增 LLM/Claw Code 执行模式切换（localStorage 持久化），新增 5 个 API 封装 [^src-2026-05-09-platform-feature-completion] |
 | 2026-05-09 | 综合修复 | **平台多问题修复**：Wiki 404 路由修复、领域配置/Provider 路由挂载、通知中心事件驱动启用（快照/数据源/Wiki 同步/启动）、领域模板静态→动态聚合重构、外部资源管理 Tab 重构、Claw Code 配置面板 |
 | 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：`web/src/app/routes/index.tsx` 存在孤儿 `</Suspense>` 和 `} />` 标签（第 153-154 行），破坏 JSX 解析树，删除后构建恢复正常 |

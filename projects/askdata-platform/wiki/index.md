@@ -16,6 +16,7 @@
 
 ## Wiki Dashboard
 - [Wiki Dashboard 功能完善（12 视图补齐与执行模式配置）](askdata-platform/Wiki%20Dashboard/wiki-dashboard-功能完善12-视图补齐与执行模式配置.md)
+- [Wiki Dashboard 对齐 — Canvas 知识图谱渲染与 Phase 3 视图实现](askdata-platform/Wiki%20Dashboard/wiki-dashboard-对齐-canvas-知识图谱渲染与-phase-3-视图实现.md)
 
 ## 性能优化
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
