@@ -22,9 +22,17 @@ type: index
 - [历史会话加载性能优化](askdata-platform/性能优化/历史会话加载性能优化.md)
 
 ## Debug
+- [平台配置模块迁移侧边栏系统管理及权限修复](askdata-platform/Debug/平台配置模块迁移侧边栏系统管理及权限修复.md)
+- [数据库迁移补全 17 张缺失表](askdata-platform/Debug/数据库迁移补全-17-张缺失表排查记录.md)
 - [Wiki 页面跳转崩溃修复](askdata-platform/Debug/wiki-页面跳转崩溃-cannot-read-properties-of-undefined-reading-find.md)
 - [Wiki 知识库 Memex 对标优化 Phase 1-4 实现记录](askdata-platform/Debug/wiki-知识库-memex-对标优化-phase-1-4-实现记录.md)
 - [历史会话加载卡死 — useEffect 循环重载与主线程阻塞](askdata-platform/Debug/历史会话加载卡死-useeffect-循环重载与主线程阻塞.md)
+- [平台配置前端功能缺失识别与实现](askdata-platform/Debug/平台配置前端功能缺失识别与实现.md)
+- [Nginx 配置重复指令导致启动失败](askdata-platform/Debug/nginx配置重复指令导致启动失败问题排查.md)
+- [前端容器 Nginx 启动时主机名解析失败](askdata-platform/Debug/前端容器-nginx-启动时主机名解析失败问题排查.md)
+- [MainSide 通知中心功能恢复](askdata-platform/Debug/mainside通知中心功能恢复-代码回归后功能重建.md)
+- [Keycloak 系统令牌获取失败](askdata-platform/Debug/keycloak-系统令牌获取失败-username-or-password-is-incorrect.md)
+- [DSC Frontend Nginx 挂载失败](askdata-platform/Debug/dsc-frontend-nginx挂载失败-目录而非文件问题排查.md)
 
 ## AskData Platform 子模块
 - [askdata-orchestrator-优化规划](askdata-platform/askdata-orchestrator-优化规划.md)
