@@ -2,6 +2,7 @@
 
 | Date | Source | Summary |
 |------|--------|---------|
+| 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：`web/src/app/routes/index.tsx` 存在孤儿 `</Suspense>` 和 `} />` 标签（第 153-154 行），破坏 JSX 解析树，删除后构建恢复正常 |
 | 2026-05-08 | 外部资源管理 | 外部资源管理功能补全：实现平台注册管理 API（GET/POST/PATCH/DELETE /wp/platforms + POST /wp/platforms/{id}/discover），补全平台适配器源代码（Dify/DSC/SkillHub 适配器），新增前端平台管理页面与路由，统一资源类型定义（新增 skill/workflow 类型）[^src-2026-05-08-外部资源管理功能补全开发记录] |
 | 2026-05-08 | 前端调试 | React const 暂时性死区导致 Cannot access before initialization 错误排查：`useCallback` 引用 `useState` 变量但定义在其之前，触发了 const 的 temporal dead zone，导致知识库模块路由懒加载失败 |
 | 2026-05-08 | 开发修复 | 平台配置模块迁移侧边栏系统管理及权限修复：后端 page_group_defaults.py 新增 PlatformConfig/LlmConfig/Claw/DomainConfig 页面组定义（parent_menu=system_management）；前端移除侧边栏隐藏逻辑、补充路由权限完整性、首页移除平台配置卡片 |
