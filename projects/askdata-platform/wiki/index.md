@@ -5,6 +5,7 @@
 - [Free-Style-Report 项目总览](free-style-report-项目总览.md)
 - [AskData 技术栈](askdata-技术栈.md)
 - [AskData 核心模块](askdata-核心模块.md)
+- [Analysis App 自动化生成](askdata-platform/analysis-app-自动化生成.md)
 - [外部资源管理模块架构](askdata-platform/外部资源管理模块架构.md)
 
 ## 功能规划
@@ -12,6 +13,7 @@
 - [外部资源管理功能设计与实现](外部资源管理功能设计与实现.md)
 - [外部资源管理功能实现进度与现状分析](外部资源管理功能实现进度与现状分析.md)
 - [LLM Provider 多供应商体系建设规划](askdata-platform/llm-provider-多供应商体系-参考-dify-model-runtime-的建设规划.md)
+- [LLM 调用统一收敛至 ScopeConfig → LLMConfig](askdata-platform/llm-调用统一收敛至-scopeconfig-llmconfig.md)
 - [成果物文本自适应与导出能力建设规划](askdata-platform/成果物文本自适应与导出能力建设规划.md)
 
 ## Wiki 知识库

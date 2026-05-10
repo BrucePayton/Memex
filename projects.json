@@ -26,7 +26,7 @@
       "description": "整理并维护Downloads目录中的各类文档，包括财务报告、知识库建设、AI智能体分析、业务流程等",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-04",
+      "last_used": "2026-05-10",
       "template": "llm-research"
     },
     {
@@ -35,7 +35,7 @@
       "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
       "model": "default",
       "created": "2026-05-02",
-      "last_used": "2026-05-09",
+      "last_used": "2026-05-10",
       "template": "llm-research"
     },
     {
@@ -44,7 +44,7 @@
       "description": "专门用来维护个人日常的开发日志信息",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-03",
+      "last_used": "2026-05-09",
       "template": "personal-notes"
     },
     {
@@ -62,7 +62,7 @@
       "description": "专门用来进行行业分类标准的知识维护",
       "model": "default",
       "created": "2026-05-04",
-      "last_used": "2026-05-08",
+      "last_used": "2026-05-09",
       "template": "llm-research"
     }
   ]
