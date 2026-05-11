@@ -57,3 +57,6 @@
 
 ## DSC Platform
 - [DSC Platform 项目概述](dsc-platform-项目概述.md)
+
+## 综合分析
+- [AskData的当前项目总览](askdata的当前项目总览.md) — AskData 平台当前项目状态的五维度综合分析（架构/功能/Wiki/稳定性/子模块）

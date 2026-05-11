@@ -26,3 +26,7 @@
 [^src-llm-统一调用收敛至-central-config]: projects/askdata-platform/raw/llm-统一调用收敛至-central-config.md
 [^src-2026-05-09-claw-dashboard-loader2-fix-and-config-refactor]: projects/askdata-platform/raw/2026-05-09-claw-dashboard-loader2-fix-and-config-refactor.md
 [^src-wiki-知识库功能完整集成-实现记录]: projects/askdata-platform/raw/wiki-知识库功能完整集成-实现记录.md
+
+## 2026-05-11 | query | AskData的当前项目总览
+生成 AskData 平台当前项目状态综合分析，归纳为架构基础、功能规划、Wiki 知识库、稳定性与 Debug、子模块演进五大维度。
+Pages created: [[askdata的当前项目总览]]
