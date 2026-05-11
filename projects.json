@@ -35,7 +35,7 @@
       "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
       "model": "default",
       "created": "2026-05-02",
-      "last_used": "2026-05-10",
+      "last_used": "2026-05-11",
       "template": "llm-research"
     },
     {
@@ -44,7 +44,7 @@
       "description": "专门用来维护个人日常的开发日志信息",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-09",
+      "last_used": "2026-05-11",
       "template": "personal-notes"
     },
     {
