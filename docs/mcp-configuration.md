@@ -47,6 +47,160 @@ Accept: application/json, text/event-stream
 
 ---
 
+## 客户端配置
+
+所有 HTTP 客户端统一连接地址：**`http://your-domain:80/mcp`**（或 HTTPS `https://your-domain:443/mcp`）。
+
+### 1. Claude Code（CLI）
+
+Claude Code 2.0+ 支持 HTTP MCP 服务器：
+
+```bash
+# 添加 HTTP MCP 服务器
+claude mcp add memex http://localhost:80/mcp
+
+# 如果服务器运行在远程地址
+claude mcp add memex http://192.168.1.100:80/mcp
+
+# 查看已添加的 MCP 服务器
+claude mcp list
+
+# 移除 MCP 服务器
+claude mcp remove memex
+```
+
+添加后，Claude Code 启动时会自动连接并加载所有 58 个工具。
+
+### 2. Claude Desktop
+
+编辑 Claude Desktop 配置文件：
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "memex": {
+      "url": "http://localhost:80/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
+```
+
+重启 Claude Desktop 后，Memex 工具将出现在工具列表中。
+
+### 3. Cursor
+
+Cursor 支持 HTTP MCP 服务器。编辑 `.cursor/mcp.json` 或在 Settings → MCP 中添加：
+
+```json
+{
+  "mcpServers": {
+    "memex": {
+      "url": "http://localhost:80/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
+```
+
+### 4. Windsurf (Codium)
+
+编辑 Windsurf MCP 配置：
+
+```json
+{
+  "mcpServers": {
+    "memex": {
+      "url": "http://localhost:80/mcp"
+    }
+  }
+}
+```
+
+### 5. Python 客户端（MCP SDK）
+
+```python
+from mcp import ClientSession, StreamableHttpTransport
+import asyncio
+
+async def main():
+    async with ClientSession(
+        "http://localhost:80/mcp",
+        transport=StreamableHttpTransport()
+    ) as session:
+        # 初始化连接
+        await session.initialize()
+
+        # 列出所有工具
+        tools = await session.list_tools()
+        for tool in tools.tools:
+            print(f"  {tool.name}: {tool.description}")
+
+        # 调用工具
+        result = await session.call_tool("list_projects")
+        print(result.content)
+
+asyncio.run(main())
+```
+
+### 6. Node.js 客户端
+
+```javascript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({
+  name: "memex-test",
+  version: "0.1.0",
+}, { capabilities: {} });
+
+const transport = new StreamableHTTPClientTransport(
+  new URL("http://localhost:80/mcp")
+);
+
+await client.connect(transport);
+
+// 列出工具
+const { tools } = await client.listTools();
+console.log(tools.map(t => t.name));
+
+// 调用工具
+const result = await client.callTool({
+  name: "list_projects",
+  arguments: {},
+});
+console.log(result);
+
+await client.close();
+```
+
+### 7. curl（快速测试）
+
+```bash
+# 1. 初始化
+curl -s -N --max-time 3 http://localhost:80/mcp -X POST \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0.1"}}}'
+
+# 2. 列出工具
+curl -s -N --max-time 3 http://localhost:80/mcp -X POST \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+
+# 3. 调用工具
+curl -s -N --max-time 5 http://localhost:80/mcp -X POST \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}'
+```
+
+---
+
 ## Docker 部署
 
 ### docker-compose.yml
