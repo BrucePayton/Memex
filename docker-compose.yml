@@ -76,8 +76,8 @@ services:
     environment:
       - TZ=${MEMEX_TZ:-Asia/Shanghai}
       - MEMEX_ACTIVE_PROJECT=${MEMEX_ACTIVE_PROJECT:-}
-      # Transport mode: stdio (default) or http (remote deployment)
-      - MEMEX_MCP_TRANSPORT=${MEMEX_MCP_TRANSPORT:-stdio}
+      # Transport mode: http (nginx proxy deployment) or stdio (local Claude CLI)
+      - MEMEX_MCP_TRANSPORT=${MEMEX_MCP_TRANSPORT:-http}
       - MEMEX_MCP_HOST=0.0.0.0
       - MEMEX_MCP_PORT=8081
     healthcheck:
