@@ -2530,15 +2530,16 @@ def main() -> None:
 
     Transport mode controlled via MEMEX_MCP_TRANSPORT env var:
     - "stdio" (default): used by `claude mcp add memex -- ...`
-    - "http": HTTP mode with SSE, used for remote/container deployment.
+    - "http": HTTP mode with Streamable HTTP (SSE), used for remote/container deployment.
     """
     transport = os.environ.get("MEMEX_MCP_TRANSPORT", "stdio")
     if transport == "stdio":
         mcp.run(transport="stdio")
     elif transport == "http":
-        host = os.environ.get("MEMEX_MCP_HOST", "0.0.0.0")
-        port = int(os.environ.get("MEMEX_MCP_PORT", "8081"))
-        mcp.run(transport="streamable-http", host=host, port=port)
+        # FastMCP reads host/port from mcp.settings when using streamable-http transport
+        mcp.settings.host = os.environ.get("MEMEX_MCP_HOST", "0.0.0.0")
+        mcp.settings.port = int(os.environ.get("MEMEX_MCP_PORT", "8081"))
+        mcp.run(transport="streamable-http")
     else:
         sys.stderr.write(f"Unknown transport: {transport}\n")
         sys.exit(1)
