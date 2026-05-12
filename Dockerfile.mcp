@@ -1,0 +1,30 @@
+# Memex MCP Server — standalone container
+# Usage: docker build -t memex-mcp -f Dockerfile.mcp .
+#        docker compose up -d memex-mcp
+
+FROM python:3.10-slim
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /sbin/nologin appuser \
+    && mkdir -p /home/appuser /data \
+    && chown appuser:appuser /home/appuser /data
+
+WORKDIR /home/appuser
+
+# Install dependencies
+COPY mcp-server/requirements.txt ./mcp-server/requirements.txt
+RUN pip install --no-cache-dir --root-user-action=ignore -r mcp-server/requirements.txt
+
+# Copy application code
+COPY --chown=appuser:appuser mcp-server/ ./mcp-server/
+COPY --chown=appuser:appuser dashboard/project_registry.py ./dashboard/
+COPY --chown=appuser:appuser dashboard/wiki_ops.py ./dashboard/
+COPY --chown=appuser:appuser projects.json .
+COPY --chown=appuser:appuser CLAUDE.md .
+COPY --chown=appuser:appuser README.md .
+
+USER appuser
+
+# Default: stdio mode (used by Claude Code MCP integration)
+# Override with CMD to run in HTTP/SSE mode for container deployment
+ENTRYPOINT ["python3", "mcp-server/memex_mcp.py"]
+CMD []

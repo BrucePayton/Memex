@@ -1,0 +1,11 @@
+{
+  "auto_join_import": true,
+  "auto_join_new": false,
+  "known_projects": [
+    "dsc-platform",
+    "个人文档中心",
+    "个人开发备注日记",
+    "askdata-platform",
+    "行业标准"
+  ]
+}

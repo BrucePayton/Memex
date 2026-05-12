@@ -1,0 +1,127 @@
+# Usage: docker compose up -d
+# Access via: http://localhost:${MEMEX_PORT:-80}
+
+services:
+  # Backend: Memex Dashboard (Web UI + REST API)
+  memex-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: memex-dashboard:${MEMEX_VERSION:-latest}
+    container_name: memex-dashboard
+    expose:
+      - "8000"
+    volumes:
+      # Wiki data (legacy + project wiki at PROJECT_ROOT/wiki)
+      - ${MEMEX_WIKI_DIR:-./wiki}:/home/appuser/wiki:rw
+      # Raw source data (immutable — mounted ro for safety)
+      - ${MEMEX_RAW_DIR:-./raw}:/home/appuser/raw:ro
+      # Multi-project support
+      - ${MEMEX_PROJECTS_DIR:-./projects}:/home/appuser/projects:rw
+      # Git repository persistence
+      - ${MEMEX_GIT_DIR:-./.git}:/home/appuser/.git:rw
+      # Dashboard settings
+      - ./.dashboard-settings.json:/home/appuser/.dashboard-settings.json:rw
+      # Data directory for logs/misc
+      - ${MEMEX_DATA_DIR:-./data}:/home/appuser/data:rw
+      # Templates for project creation
+      - ./templates:/home/appuser/templates:ro
+      # Universe config (cross-project knowledge universe)
+      - ./.memex:/home/appuser/.memex:rw
+    environment:
+      # Auto git commit configuration
+      - GIT_AUTO_COMMIT=${MEMEX_GIT_AUTO_COMMIT:-true}
+      - MEMEX_ACTIVE_PROJECT=${MEMEX_ACTIVE_PROJECT:-}
+      # Timezone
+      - TZ=${MEMEX_TZ:-Asia/Shanghai}
+      # Dashboard settings
+      - PORT=8000
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - memex-net
+
+  # MCP Server (optional — for HTTP/SSE mode; stdio mode uses local Claude Code)
+  memex-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: memex-mcp:${MEMEX_VERSION:-latest}
+    container_name: memex-mcp
+    expose:
+      - "8081"
+    volumes:
+      # Wiki data (read-write for MCP tools)
+      - ${MEMEX_WIKI_DIR:-./wiki}:/home/appuser/wiki:rw
+      # Raw source data (immutable — mounted ro for safety)
+      - ${MEMEX_RAW_DIR:-./raw}:/home/appuser/raw:ro
+      # Multi-project support
+      - ${MEMEX_PROJECTS_DIR:-./projects}:/home/appuser/projects:rw
+      # Git repository persistence
+      - ${MEMEX_GIT_DIR:-./.git}:/home/appuser/.git:rw
+      # Dashboard settings
+      - ./.dashboard-settings.json:/home/appuser/.dashboard-settings.json:rw
+      # Universe config (cross-project knowledge universe)
+      - ./.memex:/home/appuser/.memex:rw
+    environment:
+      - TZ=${MEMEX_TZ:-Asia/Shanghai}
+      - MEMEX_ACTIVE_PROJECT=${MEMEX_ACTIVE_PROJECT:-}
+      # Transport mode: stdio (default) or http (remote deployment)
+      - MEMEX_MCP_TRANSPORT=${MEMEX_MCP_TRANSPORT:-stdio}
+      - MEMEX_MCP_HOST=0.0.0.0
+      - MEMEX_MCP_PORT=8081
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - memex-net
+
+  # Frontend: Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: memex-nginx
+    ports:
+      - "${MEMEX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${MEMEX_SSL_DIR:-./ssl}:/etc/nginx/ssl:ro
+      - ${MEMEX_STATIC_DIR:-./static}:/usr/share/nginx/html/static:ro
+    depends_on:
+      memex-dashboard:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - memex-net
+
+networks:
+  memex-net:
+    driver: bridge

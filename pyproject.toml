@@ -1,0 +1,18 @@
+[project]
+name = "memex"
+version = "0.1.0"
+description = "Self-maintaining LLM wiki (Obsidian vault + MCP server + Dashboard)"
+requires-python = ">=3.12"
+dependencies = [
+  "mcp>=1.2,<2",
+]
+
+[project.optional-dependencies]
+graph = [
+  "graphify@git+https://github.com/safishams/graphify",
+  "networkx>=3.0",
+]
+
+[project.scripts]
+memex-server = "dashboard.server:main"
+memex-mcp = "mcp-server.memex_mcp:main"

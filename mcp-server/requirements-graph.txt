@@ -1,0 +1,4 @@
+mcp>=1.2,<2
+networkx>=3.0
+# graspologic  # optional, for better community detection
+# graphify@git+https://github.com/safishams/graphify  # full graphify integration

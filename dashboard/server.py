@@ -15,8 +15,9 @@ from index_strategy import get_strategy, get_index_instruction, rebuild_index
 from pathlib import Path
 import project_registry
 from project_registry import REGISTRY_FILE
+import wiki_ops
 
-PORT = 8090
+PORT = int(os.environ.get("PORT", "8090"))
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 WIKI_DIR = PROJECT_ROOT / "wiki"
@@ -58,6 +59,8 @@ _DEFAULT_SETTINGS = {
     "openai_model": "",
     "http_temperature": 0.2,
     "http_max_tokens": 0,
+    # Graph enhancement: use graphify (Leiden clustering / surprising connections)
+    "use_graphify_enhancement": False,
     # Optional named profiles: { "name": { "ai_provider", "openai_base_url", ... } }
     "ai_profiles": {},
     "active_ai_profile": "",
@@ -77,6 +80,18 @@ CLI_TYPES = {
         "default_binary": "claw",
         "wrapper_prefix": "memex-claw-",
         "env_file_prefix": "~/.claw-",
+    },
+    "claude-ark": {
+        "label": "Claude Code (Ark Proxy)",
+        "default_binary": "claude-ark",
+        "wrapper_prefix": "memex-claude-ark-",
+        "env_file_prefix": "~/.claude-ark-",
+    },
+    "claw-anthropic-ark": {
+        "label": "Claw Code (Anthropic Ark Proxy)",
+        "default_binary": "claw-anthropic-ark",
+        "wrapper_prefix": "memex-claw-anthropic-ark-",
+        "env_file_prefix": "~/.claw-anthropic-ark-",
     },
 }
 
@@ -817,6 +832,27 @@ def parse_stream_event(evt, elapsed=0):
     if evt_type == "error":
         return {"type": "error", "message": evt.get("message", "Unknown error"), "elapsed": elapsed}
 
+    # Handle assistant thinking/delta messages to show content
+    if evt_type in ("assistant", "delta"):
+        msg = evt.get("message", {})
+        # Check for text content
+        content = msg.get("content", [])
+        text_content = ""
+        if isinstance(content, str):
+            text_content = content
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text", "")
+                    if text:
+                        text_content += text
+        # Also check for top-level text
+        if not text_content and msg.get("content") and isinstance(msg.get("content"), str):
+            text_content = msg.get("content")
+        if text_content and len(text_content.strip()) > 0:
+            # Show first 400 chars of thinking/content
+            return {"type": "assistant_content", "content": text_content[:400], "elapsed": elapsed}
+
     # tool_use from assistant/delta: nested in message.content[] array
     if evt_type in ("assistant", "delta", "content_block_start", "content_block_delta", "content_block_stop"):
         msg = evt.get("message", {})
@@ -831,10 +867,24 @@ def parse_stream_event(evt, elapsed=0):
                         return {"type": "tool_use", "tool": "Read", "file": _normalize_path(fp), "elapsed": elapsed}
                     if tool_name == "Write":
                         fp = tool_input.get("file_path", "")
-                        return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "elapsed": elapsed}
+                        write_content = tool_input.get("content", "")
+                        preview = ""
+                        if write_content:
+                            if len(write_content) > 200:
+                                preview = write_content[:200] + "..."
+                            else:
+                                preview = write_content
+                        return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "content_preview": preview, "elapsed": elapsed}
                     if tool_name == "Edit":
                         fp = tool_input.get("file_path", "")
-                        return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "elapsed": elapsed}
+                        old_str = tool_input.get("old_string", "")
+                        new_str = tool_input.get("new_string", "")
+                        preview = ""
+                        if old_str and len(old_str) < 150:
+                            preview = f"Replacing: {old_str[:100]}"
+                        elif new_str and len(new_str) < 150:
+                            preview = f"With: {new_str[:100]}"
+                        return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "content_preview": preview, "elapsed": elapsed}
                     if tool_name == "Grep":
                         pattern = tool_input.get("pattern", "")
                         path = tool_input.get("path", "")
@@ -854,10 +904,24 @@ def parse_stream_event(evt, elapsed=0):
             return {"type": "tool_use", "tool": "Read", "file": _normalize_path(fp), "elapsed": elapsed}
         if tool_name == "Write":
             fp = tool_input.get("file_path", "")
-            return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "elapsed": elapsed}
+            write_content = tool_input.get("content", "")
+            preview = ""
+            if write_content:
+                if len(write_content) > 200:
+                    preview = write_content[:200] + "..."
+                else:
+                    preview = write_content
+            return {"type": "tool_use", "tool": "Write", "file": _normalize_path(fp), "content_preview": preview, "elapsed": elapsed}
         if tool_name == "Edit":
             fp = tool_input.get("file_path", "")
-            return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "elapsed": elapsed}
+            old_str = tool_input.get("old_string", "")
+            new_str = tool_input.get("new_string", "")
+            preview = ""
+            if old_str and len(old_str) < 150:
+                preview = f"Replacing: {old_str[:100]}"
+            elif new_str and len(new_str) < 150:
+                preview = f"With: {new_str[:100]}"
+            return {"type": "tool_use", "tool": "Edit", "file": _normalize_path(fp), "content_preview": preview, "elapsed": elapsed}
         if tool_name == "Grep":
             pattern = tool_input.get("pattern", "")
             path = tool_input.get("path", "")
@@ -867,7 +931,7 @@ def parse_stream_event(evt, elapsed=0):
             return {"type": "tool_use", "tool": "Glob", "pattern": pattern, "elapsed": elapsed}
         return {"type": "tool_use", "tool": tool_name, "input": {k: str(v)[:200] for k, v in tool_input.items()}, "elapsed": elapsed}
 
-    # tool_result (user message with tool_result)
+    # tool_result (user message with tool_result) - enhanced with better content preview
     tur = evt.get("tool_use_result")
     if tur and isinstance(tur, dict):
         is_err = tur.get("is_error", False)
@@ -875,7 +939,16 @@ def parse_stream_event(evt, elapsed=0):
         fp = ""
         if isinstance(tur.get("file"), dict):
             fp = tur["file"].get("filePath", "")
-        return {"type": "tool_result", "tool": tur.get("toolName", ""), "file": _normalize_path(fp), "status": "error" if is_err else "ok", "preview": (content or "")[:300], "elapsed": elapsed}
+        # Generate better preview
+        preview = ""
+        if content:
+            content_str = str(content)
+            if len(content_str) > 500:
+                # Show first 250 and last 250 chars
+                preview = content_str[:250] + "\n...\n" + content_str[-250:]
+            else:
+                preview = content_str
+        return {"type": "tool_result", "tool": tur.get("toolName", ""), "file": _normalize_path(fp), "status": "error" if is_err else "ok", "preview": preview, "elapsed": elapsed}
 
     # Generic passthrough — display unknown event types on frontend
     return {"type": "tool_use", "tool": f"[{evt_type or 'unknown'}]", "file": "", "elapsed": elapsed}
@@ -904,6 +977,7 @@ def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
         )
         start = time.monotonic()
         heartbeat_interval = 10  # seconds between heartbeat events
+        last_activity_type = "starting"
         try:
             while True:
                 readable, _, _ = select.select([proc.stdout], [], [], heartbeat_interval)
@@ -916,13 +990,27 @@ def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
                     elapsed = time.monotonic() - start
                     try:
                         evt = json.loads(line)
-                    except (json.JSONDecodeError, ValueError):
+                        # Track activity type for better heartbeat messages
+                        evt_type = evt.get("type", "")
+                        if evt_type == "tool_use" or evt_type == "assistant":
+                            last_activity_type = evt_type
+                        yield parse_stream_event(evt, elapsed=round(elapsed, 1))
+                    except (json.JSONDecodeError, ValueError) as e:
+                        # Log JSON parse errors for debugging but continue processing
+                        # Don't yield to avoid polluting SSE stream
+                        print(f"[stream debug] JSON parse error: {e} — line: {line[:200]}", file=sys.stderr)
                         continue
-                    yield parse_stream_event(evt, elapsed=round(elapsed, 1))
                 else:
                     # Timeout — emit heartbeat to keep frontend alive
                     elapsed = time.monotonic() - start
-                    yield {"type": "heartbeat", "elapsed": round(elapsed, 1), "message": f"Processing... ({int(elapsed)}s)"}
+                    # More descriptive heartbeat based on recent activity
+                    if last_activity_type == "tool_use":
+                        msg = f"Working with tools... ({int(elapsed)}s)"
+                    elif last_activity_type == "assistant":
+                        msg = f"Thinking... ({int(elapsed)}s)"
+                    else:
+                        msg = f"Processing... ({int(elapsed)}s)"
+                    yield {"type": "heartbeat", "elapsed": round(elapsed, 1), "message": msg}
         except GeneratorExit:
             raise
         proc.wait(timeout=5)
@@ -1187,20 +1275,9 @@ def stream_lint(project_slug=None):
 
 def stream_lint_fix(project_slug=None):
     proj = project_registry.get_project(project_slug)
+    prompt = _op_prompt_for("lint_fix")
     yield {"type": "progress", "phase": "starting", "message": "Starting lint fix…", "elapsed": 0}
-    for evt in run_claude_streaming("""You just ran the CLAUDE.md Lint checklist. Fix every issue found now:
-
-- Fix missing/invalid frontmatter
-- Add [^src-*] to uncited claims when a source exists
-- Align source_count with actual citations
-- Bump last_updated to today where appropriate
-- Add inbound [[wikilink]] to orphan pages; add missing cross-links
-- Create stub pages for mentioned concepts without pages (min. one citation)
-- Fix status / superseded_by inconsistencies
-- Add ## Disputed where status demands it
-- Refresh wiki/index.md, wiki/log.md, wiki/overview.md as needed
-
-Summarize fixes by Critical / Warning / Info.""", project=proj):
+    for evt in run_claude_streaming(prompt, project=proj):
         yield evt
     try:
         git_mgr.commit_lint_fix(project=proj)
@@ -1335,6 +1412,56 @@ tags:
             pass
 
 
+def stream_loop(
+    steps=None, include_ingest=False, reflect_window="last-10-ingests",
+    project_slug=None, continue_on_error=False,
+):
+    """SSE streaming version of the wiki loop."""
+    if steps is None:
+        steps = ["lint", "lint_fix", "reflect"]
+
+    step_generators = {
+        "lint": lambda: stream_lint(project_slug=project_slug),
+        "lint_fix": lambda: stream_lint_fix(project_slug=project_slug),
+        "reflect": lambda: stream_reflect(window=reflect_window, project_slug=project_slug),
+    }
+
+    start = time.monotonic()
+    yield {"type": "loop_start", "steps": steps, "elapsed": 0}
+
+    # Step 0: ingest if requested
+    if include_ingest:
+        step_start = time.monotonic()
+        yield {"type": "step_start", "step": "ingest", "label": "Ingest", "elapsed": round(time.monotonic() - start, 1)}
+        new_sources = wiki_ops.detect_new_sources(project_slug)
+        uncited = [s for s in new_sources if not s["cited"]]
+        if uncited:
+            for src in uncited:
+                yield {"type": "step_progress", "step": "ingest", "phase": "starting", "message": f"Ingesting {src['slug']}…"}
+                ingest_gen = stream_ingest(src["slug"], "", project_slug=project_slug)
+                for evt in ingest_gen:
+                    yield evt
+        else:
+            yield {"type": "step_done", "step": "ingest", "status": "skipped", "reason": "no_new_sources", "elapsed": round(time.monotonic() - step_start, 1)}
+
+    # Main steps
+    for step_name in steps:
+        step_start = time.monotonic()
+        gen_fn = step_generators.get(step_name)
+        if not gen_fn:
+            yield {"type": "step_done", "step": step_name, "status": "skipped",
+                    "reason": f"unknown step: {step_name}", "elapsed": 0}
+            continue
+
+        yield {"type": "step_start", "step": step_name, "label": step_name.replace("_", " ").title(),
+                "elapsed": round(time.monotonic() - start, 1)}
+        for evt in gen_fn():
+            evt["step"] = step_name
+            yield evt
+
+    yield {"type": "loop_done", "ok": True, "elapsed": round(time.monotonic() - start, 1)}
+
+
 QUERY_LOG = PROJECT_ROOT / "query-log.jsonl"
 
 
@@ -1445,24 +1572,78 @@ def build_wiki_data(project_slug=None, ui_lang=None):
         nodes.append({"id": filename, "label": disp_title, "type": pt})
         for lnk in links:
             edges.append({"from": filename, "to": lnk})
-    # Build basename → filename lookup table
-    basename_lookup = {}
-    for fid in node_ids:
-        base = os.path.basename(fid)
-        basename_lookup[base] = fid
+    # Build basename → [all matching filenames] lookup table
+    # Also build filename → title map for fuzzy matching on collision
+    basename_candidates = {}   # basename/stem → [full_paths]
+    filename_to_title = {}     # filename → display title
+    for p in pages:
+        fid = p["filename"]
+        fn = os.path.basename(fid)
         stem = fid.replace('.md', '')
-        basename_lookup[stem] = fid
+        if fn not in basename_candidates:
+            basename_candidates[fn] = []
+        basename_candidates[fn].append(fid)
+        if stem not in basename_candidates:
+            basename_candidates[stem] = []
+        basename_candidates[stem].append(fid)
+        filename_to_title[fid] = p["title"]
+
+    def _resolve_target(target, title_hint=""):
+        """Resolve a wikilink target to its canonical full-path filename."""
+        # Exact match first (handles already-resolved paths like "wiki/page.md")
+        if target in node_ids:
+            return target
+        # Strip fragment identifier
+        clean = target.split("#", 1)[0]
+        if clean in node_ids:
+            return clean
+        candidates = basename_candidates.get(clean) or basename_candidates.get(os.path.basename(clean))
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        # Collision: prefer match by title similarity or directory prefix
+        if title_hint:
+            hint_lower = title_hint.lower().replace(" ", "-").replace("_", "-")
+            scores = []
+            for c in candidates:
+                ct = filename_to_title.get(c, "").lower().replace(" ", "-").replace("_", "-")
+                # Exact substring match wins
+                if hint_lower == ct:
+                    return c
+                if hint_lower in ct or ct in hint_lower:
+                    scores.append((c, 2))
+                else:
+                    # Count shared words
+                    hw = set(hint_lower.split("-"))
+                    cw = set(ct.split("-"))
+                    shared = len(hw & cw)
+                    if shared > 0:
+                        scores.append((c, shared))
+            if scores:
+                scores.sort(key=lambda x: x[1], reverse=True)
+                return scores[0][0]
+        # Fall back to first candidate (original behavior)
+        return candidates[0]
 
     for e in edges:
         target = e["to"]
-        resolved = basename_lookup.get(target)
+        # Use source page's title as hint for disambiguation
+        source_title = ""
+        src_file = e["from"]
+        for p in pages:
+            if p["filename"] == src_file:
+                source_title = p["title"]
+                break
+        resolved = _resolve_target(target, source_title)
         if resolved:
-            e["to"] = resolved  # Replace with full path
-        else:
-            if target not in node_ids:
-                node_ids.add(target)
-                stub = target.split("#", 1)[0].replace(".md", "")
-                nodes.append({"id": target, "label": stub.replace("-", " ").title(), "type": "missing"})
+            e["to"] = resolved
+        elif target not in node_ids and target.split("#", 1)[0] not in node_ids:
+            # Create stub node for unresolved targets so edges aren't silently lost
+            stub_id = target
+            stub_label = os.path.basename(stub_id).replace(".md", "").replace("-", " ").title()
+            nodes.append({"id": stub_id, "label": stub_label, "type": "missing"})
+            node_ids.add(stub_id)
     log_entries = []
     lf = wiki_dir / "log.md"
     if lf.exists():
@@ -1509,6 +1690,805 @@ def wiki_hash(project_slug=None):
             total += int(md.stat().st_mtime * 1000)
             count += 1
     return f"{count}:{total}"
+
+
+# ─── graph analysis APIs (ported from graphify, stdlib-only) ────────────────
+
+def _build_graph_data(proj):
+    """Build {nodes, edges} from wiki pages. Returns (nodes, edges, node_map)."""
+    data = build_wiki_data(proj.slug)
+    nodes = []
+    edges = []
+    node_map = {}
+    # Use already-resolved graph data (edges have basename resolution applied)
+    for n in data["graph"]["nodes"]:
+        fn = n["id"]
+        # Find the full page dict to include all fields; stub nodes won't have one
+        pg = next((p for p in data["pages"] if p["filename"] == fn), None)
+        if pg:
+            node_entry = dict(pg)
+        else:
+            # Stub/missing node — fill required fields with defaults
+            stem = os.path.basename(fn).replace(".md", "").replace("-", " ").title()
+            node_entry = {
+                "filename": fn, "folder": "", "title": stem, "type": n.get("type", "missing"),
+                "created": "", "updated": "", "tags": [], "sources": [],
+                "links": [], "word_count": 0, "content": "",
+            }
+        nodes.append(node_entry)
+        node_map[fn] = node_entry
+    for e in data["graph"]["edges"]:
+        edges.append({"from": e["from"], "to": e["to"]})
+    return nodes, edges, node_map
+
+
+def _build_nx_graph(proj):
+    """Build a networkx.Graph from wiki pages and wikilinks.
+
+    Returns (nx.Graph, node_map). Nodes have attrs: label, type, filename.
+    Only includes non-system pages (index.md, log.md, overview.md excluded).
+    """
+    import networkx as nx
+
+    nodes, edges, node_map = _build_graph_data(proj)
+    sys_pages = {"index.md", "log.md", "overview.md"}
+    G = nx.Graph()
+    for n in nodes:
+        fn = n["filename"]
+        if fn not in sys_pages:
+            G.add_node(fn,
+                       label=n["title"],
+                       type=n.get("type", "unknown"),
+                       word_count=n.get("word_count", 0),
+                       tags=n.get("tags", []))
+    for e in edges:
+        src, tgt = e["from"], e["to"]
+        if src in G and tgt in G:
+            G.add_edge(src, tgt)
+    return G, node_map
+
+
+def _graph_build_api(proj):
+    nodes, edges, node_map = _build_graph_data(proj)
+    return {
+        "project": proj.slug,
+        "nodes": [{"id": n["filename"], "label": n["title"], "type": n["type"],
+                   "word_count": n["word_count"], "tags": n.get("tags", [])} for n in nodes],
+        "edges": edges,
+    }
+
+
+def _graph_stats_api(proj):
+    nodes, edges, node_map = _build_graph_data(proj)
+    sys_pages = {"index.md", "log.md", "overview.md"}
+    type_counts = {}
+    for n in nodes:
+        type_counts[n["type"]] = type_counts.get(n["type"], 0) + 1
+    degree = {n["filename"]: 0 for n in nodes if n["filename"] not in sys_pages}
+    for e in edges:
+        if e["from"] in degree:
+            degree[e["from"]] += 1
+        if e["to"] in degree:
+            degree[e["to"]] += 1
+    n_real = len(degree)
+    avg_degree = round(sum(degree.values()) / n_real, 2) if n_real > 0 else 0
+    max_possible = n_real * (n_real - 1) / 2 if n_real > 1 else 1
+    density = round(len(edges) / max_possible, 4) if max_possible > 0 else 0
+    isolated = sum(1 for d in degree.values() if d == 0)
+    return {
+        "project": proj.slug, "node_count": len(nodes), "edge_count": len(edges),
+        "real_nodes": n_real, "type_counts": type_counts, "isolated_pages": isolated,
+        "avg_degree": avg_degree, "density": density,
+    }
+
+
+def _graph_god_nodes_api(proj, top_n=10):
+    nodes, edges, node_map = _build_graph_data(proj)
+    sys_pages = {"index.md", "log.md", "overview.md"}
+    degree = {n["filename"]: 0 for n in nodes if n["filename"] not in sys_pages}
+    for e in edges:
+        if e["from"] in degree:
+            degree[e["from"]] += 1
+        if e["to"] in degree:
+            degree[e["to"]] += 1
+    sorted_nodes = sorted(degree.items(), key=lambda x: -x[1])
+    result = []
+    for nid, deg in sorted_nodes[:top_n]:
+        n = node_map.get(nid)
+        result.append({"id": nid, "label": n["title"] if n else nid,
+                       "degree": deg, "type": n["type"] if n else "unknown"})
+    return {"project": proj.slug, "god_nodes": result}
+
+
+def _graph_community_api_enhanced(proj):
+    """Community detection using graphify's Leiden algorithm."""
+    G, node_map = _build_nx_graph(proj)
+    try:
+        comms_raw = cluster(G)  # dict[int, list[str]]
+    except Exception as exc:
+        sys.stderr.write(f"[graphify cluster failed: {exc}] falling back to BFS\n")
+        return _graph_community_api_bfs(proj)
+    # Build same output format as BFS
+    final_comms = sorted(comms_raw.values(), key=len, reverse=True)
+    # Cohesion score (same formula as BFS)
+    node_list = [n["filename"] for n in _build_graph_data(proj)[0]]
+    _, edges_list, _ = _build_graph_data(proj)
+
+    def cohesion_score(nodes_in_comp):
+        nc = len(nodes_in_comp)
+        if nc <= 1:
+            return 1.0
+        comp_set = set(nodes_in_comp)
+        actual = sum(1 for e in edges_list if e["from"] in comp_set and e["to"] in comp_set)
+        possible = nc * (nc - 1) / 2
+        return round(actual / possible, 2) if possible > 0 else 0.0
+
+    final_comms.sort(key=len, reverse=True)
+    cohesion = {str(i): cohesion_score(c) for i, c in enumerate(final_comms)}
+    return {
+        "project": proj.slug,
+        "communities": {str(i): c for i, c in enumerate(final_comms)},
+        "cohesion": cohesion,
+        "community_count": len(final_comms),
+    }
+
+
+def _graph_community_api_bfs(proj):
+    """BFS connected components + greedy splitting (original built-in)."""
+    from collections import deque
+    nodes, edges, node_map = _build_graph_data(proj)
+    node_ids = [n["filename"] for n in nodes]
+    id_idx = {nid: i for i, nid in enumerate(node_ids)}
+    n = len(node_ids)
+    adj = [set() for _ in range(n)]
+    for e in edges:
+        if e["from"] in id_idx and e["to"] in id_idx:
+            u, v = id_idx[e["from"]], id_idx[e["to"]]
+            adj[u].add(v)
+            adj[v].add(u)
+    visited = [False] * n
+    components = []
+    for start in range(n):
+        if visited[start]:
+            continue
+        comp = []
+        queue = deque([start])
+        visited[start] = True
+        while queue:
+            u = queue.popleft()
+            comp.append(node_ids[u])
+            for v in adj[u]:
+                if not visited[v]:
+                    visited[v] = True
+                    queue.append(v)
+        components.append(comp)
+
+    def cohesion_score(nodes_in_comp):
+        nc = len(nodes_in_comp)
+        if nc <= 1:
+            return 1.0
+        comp_set = set(nodes_in_comp)
+        actual = sum(1 for e in edges if e["from"] in comp_set and e["to"] in comp_set)
+        possible = nc * (nc - 1) / 2
+        return round(actual / possible, 2) if possible > 0 else 0.0
+
+    # Split large communities (>10 nodes)
+    final_components = []
+    for comp in components:
+        if len(comp) <= 10:
+            final_components.append(comp)
+        else:
+            comp_set = set(comp)
+            comp_idx = {nid: i for i, nid in enumerate(comp)}
+            comp_adj = [set() for _ in range(len(comp))]
+            for e in edges:
+                if e["from"] in comp_idx and e["to"] in comp_idx:
+                    u, v = comp_idx[e["from"]], comp_idx[e["to"]]
+                    comp_adj[u].add(v)
+                    comp_adj[v].add(u)
+            degrees = sorted(range(len(comp)), key=lambda i: len(comp_adj[i]), reverse=True)
+            seeds = degrees[:min(2, len(degrees))]
+            clusters = [[] for _ in seeds]
+            for i in range(len(comp)):
+                if i in seeds:
+                    continue
+                best = max(range(len(seeds)), key=lambda si: len(comp_adj[i] & comp_adj[seeds[si]]), default=0)
+                clusters[best].append(comp[i])
+            for si, seed in enumerate(seeds):
+                clusters[si].append(comp[seed])
+            final_components.extend([c for c in clusters if c])
+
+    final_components.sort(key=len, reverse=True)
+    cohesion = {i: cohesion_score(c) for i, c in enumerate(final_components)}
+    return {
+        "project": proj.slug,
+        "communities": {str(i): c for i, c in enumerate(final_components)},
+        "cohesion": cohesion,
+        "community_count": len(final_components),
+    }
+
+
+def _graph_community_api(proj):
+    """Route to graphify-enhanced or built-in based on setting."""
+    if SETTINGS.get("use_graphify_enhancement") and _GRAPHIFY_AVAILABLE:
+        return _graph_community_api_enhanced(proj)
+    return _graph_community_api_bfs(proj)
+
+
+def _graph_shortest_path_api(proj, source, target):
+    from collections import deque
+    nodes, edges, node_map = _build_graph_data(proj)
+    node_lookup = {}
+    for n in nodes:
+        node_lookup[n["filename"].lower()] = n["filename"]
+        node_lookup[n["title"].lower()] = n["filename"]
+    src_id = node_lookup.get(source.lower())
+    tgt_id = node_lookup.get(target.lower())
+    if not src_id:
+        return {"ok": False, "error": f"source node not found: {source}"}
+    if not tgt_id:
+        return {"ok": False, "error": f"target node not found: {target}"}
+    if src_id == tgt_id:
+        return {"ok": True, "path": [src_id], "hops": 0, "edges": []}
+    adj = {n["filename"]: [] for n in nodes}
+    for e in edges:
+        if e["from"] in adj and e["to"] in adj:
+            adj[e["from"]].append(e["to"])
+            adj[e["to"]].append(e["from"])
+    visited = {src_id: None}
+    queue = deque([src_id])
+    while queue:
+        u = queue.popleft()
+        if u == tgt_id:
+            break
+        for v in adj[u]:
+            if v not in visited:
+                visited[v] = u
+                queue.append(v)
+    if tgt_id not in visited:
+        return {"ok": False, "error": f"no path between '{source}' and '{target}'"}
+    path = []
+    cur = tgt_id
+    while cur is not None:
+        path.append(cur)
+        cur = visited[cur]
+    path.reverse()
+    path_edges = [{"from": path[i], "to": path[i + 1]} for i in range(len(path) - 1)]
+    return {"ok": True, "path": path, "hops": len(path) - 1, "edges": path_edges}
+
+
+def _graph_neighbors_api(proj, node_id):
+    nodes, edges, node_map = _build_graph_data(proj)
+    node_lookup = {}
+    for n in nodes:
+        node_lookup[n["filename"].lower()] = n["filename"]
+        node_lookup[n["title"].lower()] = n["filename"]
+    nid = node_lookup.get(node_id.lower())
+    if not nid:
+        return {"ok": False, "error": f"node not found: {node_id}"}
+    neighbors = []
+    seen = set()
+    for e in edges:
+        if e["from"] == nid and e["to"] not in seen:
+            seen.add(e["to"])
+            info = node_map.get(e["to"])
+            neighbors.append({"id": e["to"], "label": info["title"] if info else e["to"],
+                              "type": info["type"] if info else "unknown", "relation": "wikilink"})
+        elif e["to"] == nid and e["from"] not in seen:
+            seen.add(e["from"])
+            info = node_map.get(e["from"])
+            neighbors.append({"id": e["from"], "label": info["title"] if info else e["from"],
+                              "type": info["type"] if info else "unknown", "relation": "wikilink"})
+    info = node_map.get(nid)
+    return {
+        "ok": True, "project": proj.slug,
+        "node": {"id": nid, "label": info["title"] if info else nid,
+                 "type": info["type"] if info else "unknown"},
+        "neighbors": neighbors, "neighbor_count": len(neighbors),
+    }
+
+
+def _graph_insights_api(proj):
+    nodes, edges, node_map = _build_graph_data(proj)
+    sys_pages = {"index.md", "log.md", "overview.md"}
+    degree = {n["filename"]: 0 for n in nodes}
+    for e in edges:
+        if e["from"] in degree:
+            degree[e["from"]] += 1
+        if e["to"] in degree:
+            degree[e["to"]] += 1
+    cross_type = []
+    for e in edges:
+        src = node_map.get(e["from"])
+        tgt = node_map.get(e["to"])
+        if src and tgt and src["type"] != tgt["type"]:
+            cross_type.append({"from": e["from"], "from_type": src["type"],
+                               "to": e["to"], "to_type": tgt["type"]})
+    isolated = []
+    for nid, deg in degree.items():
+        if deg <= 1 and nid not in sys_pages:
+            info = node_map.get(nid)
+            isolated.append({"id": nid, "label": info["title"] if info else nid,
+                             "type": info["type"] if info else "unknown", "degree": deg})
+    from collections import deque
+    node_ids = [n["filename"] for n in nodes if n["filename"] not in sys_pages]
+    adj = {nid: [] for nid in node_ids}
+    for e in edges:
+        if e["from"] in adj and e["to"] in adj:
+            adj[e["from"]].append(e["to"])
+            adj[e["to"]].append(e["from"])
+    def count_components(exclude=None):
+        remaining = [nid for nid in node_ids if nid != exclude]
+        if not remaining:
+            return 0
+        vis = set()
+        comps = 0
+        for start in remaining:
+            if start in vis:
+                continue
+            comps += 1
+            q = deque([start])
+            vis.add(start)
+            while q:
+                u = q.popleft()
+                for v in adj[u]:
+                    if v != exclude and v not in vis:
+                        vis.add(v)
+                        q.append(v)
+        return comps
+    base_comps = count_components()
+    bridges = []
+    for nid in node_ids:
+        if degree.get(nid, 0) < 2:
+            continue
+        new_comps = count_components(exclude=nid)
+        if new_comps > base_comps:
+            info = node_map.get(nid)
+            bridges.append({"id": nid, "label": info["title"] if info else nid,
+                            "type": info["type"] if info else "unknown",
+                            "degree": degree[nid], "components_if_removed": new_comps})
+    bridges.sort(key=lambda x: -x["components_if_removed"])
+
+    # Graphify-enhanced surprising connections
+    sc_suggestions = []
+    if SETTINGS.get("use_graphify_enhancement") and _GRAPHIFY_AVAILABLE:
+        try:
+            G, _ = _build_nx_graph(proj)
+            comm_result = _graph_community_api(proj)
+            comms = {int(k): v for k, v in comm_result.get("communities", {}).items()}
+            sc_list = surprising_connections(G, communities=comms, top_n=5)
+            for sc in sc_list:
+                # graphify returns node LABELS (titles), not filenames
+                src_label = sc.get("source", "?")
+                tgt_label = sc.get("target", "?")
+                score = sc.get("relation", "") or sc.get("confidence", "unknown")
+                label = f"{src_label} ↔ {tgt_label} ({score})"
+                sc_suggestions.append(label)
+        except Exception as exc:
+            sys.stderr.write(f"[surprising_connections failed: {exc}] skipping\n")
+
+    suggestions = []
+    for s in sc_suggestions:
+        suggestions.append("[Enhanced] " + s)
+    if isolated:
+        suggestions.append(f"{len(isolated)} isolated page(s) found — consider adding more wikilinks")
+    if bridges:
+        suggestions.append(f"{len(bridges)} bridge page(s) detected — these connect separate graph regions")
+    if cross_type:
+        suggestions.append(f"{len(cross_type)} cross-type connection(s) found")
+    return {
+        "project": proj.slug,
+        "cross_type": cross_type[:20],
+        "bridges": bridges[:10],
+        "isolated": isolated[:20],
+        "suggestions": suggestions,
+    }
+
+
+def _graph_export_api(proj, fmt="json"):
+    nodes, edges, node_map = _build_graph_data(proj)
+    if fmt == "json":
+        out = proj.root / "graph-export.json"
+        out.write_text(json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        return {"ok": True, "project": proj.slug, "path": str(out.relative_to(PROJECT_ROOT)), "format": "json"}
+    if fmt == "html":
+        nodes_json = json.dumps(nodes, ensure_ascii=False)
+        edges_json = json.dumps(edges, ensure_ascii=False)
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Memex Graph</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden}}
+canvas{{width:100vw;height:100vh;cursor:grab}}
+#legend{{position:fixed;bottom:12px;left:12px;background:#161b22ee;border:1px solid #30363d;border-radius:8px;padding:8px 12px;font-size:11px}}
+#legend span{{display:inline-flex;align-items:center;gap:4px;margin-right:12px}}
+#legend i{{width:8px;height:8px;border-radius:50%;display:inline-block}}
+#info{{position:fixed;top:12px;left:12px;background:#161b22ee;border:1px solid #30363d;border-radius:8px;padding:6px 10px;font-size:11px;color:#8b949e}}
+</style></head><body>
+<div id="info">{len(nodes)} nodes · {len(edges)} edges · click a node to highlight</div>
+<div id="legend"></div>
+<canvas id="cv"></canvas>
+<script>
+var TC={{source:'#3fb950',entity:'#58a6ff',concept:'#bc8cff',analysis:'#39d2c0',overview:'#8b949e',missing:'#f85149',unknown:'#8b949e'}};
+var nodes={nodes_json},edges={edges_json};
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function resize(){{cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;ctx.scale(devicePixelRatio,devicePixelRatio);}}
+resize();addEventListener('resize',resize);
+var W=innerWidth,H=innerHeight;
+var ns=nodes.map(function(n){{return {{...n,x:W/2+(Math.random()-.5)*400,y:H/2+(Math.random()-.5)*400,vx:0,vy:0,r:n.type==='overview'?16:10}};}});
+var nm={{}};ns.forEach(function(n){{nm[n.id]=n;}});
+var es=edges.filter(function(e){{return nm[e.from]&&nm[e.to];}}).map(function(e){{return {{s:nm[e.from],t:nm[e.to]}};}});
+var hov=null,drag=null;
+var types={{}};ns.forEach(function(n){{types[n.type]=true;}});
+var lg=document.getElementById('legend');
+Object.keys(types).forEach(function(tp){{lg.innerHTML+='<span><i style="background:'+(TC[tp]||'#8b949e')+'"></i>'+tp+'</span>';}});
+function tick(){{
+  var cx=W/2,cy=H/2;
+  for(var n of ns){{n.vx+=(cx-n.x)*.001;n.vy+=(cy-n.y)*.001;}}
+  for(var i=0;i<ns.length;i++)for(var j=i+1;j<ns.length;j++){{
+    var a=ns[i],b=ns[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1,f=1200/(d*d);
+    a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f;
+  }}
+  for(var e of es){{
+    var dx2=e.t.x-e.s.x,dy2=e.t.y-e.s.y,d2=Math.sqrt(dx2*dx2+dy2*dy2)||1,f2=(d2-140)*.004;
+    e.s.vx+=dx2/d2*f2;e.s.vy+=dy2/d2*f2;e.t.vx-=dx2/d2*f2;e.t.vy-=dy2/d2*f2;
+  }}
+  for(var n of ns){{
+    if(n===drag)continue;n.vx*=.82;n.vy*=.82;
+    n.x+=n.vx;n.y+=n.vy;n.x=Math.max(n.r,Math.min(W-n.r,n.x));n.y=Math.max(n.r,Math.min(H-n.r,n.y));
+  }}
+  ctx.clearRect(0,0,W,H);
+  for(var e of es){{
+    var hi=hov&&(e.s.id===hov.id||e.t.id===hov.id);
+    ctx.strokeStyle=hi?'#58a6ff66':'#30363d';ctx.lineWidth=hi?2:1;
+    ctx.beginPath();ctx.moveTo(e.s.x,e.s.y);ctx.lineTo(e.t.x,e.t.y);ctx.stroke();
+  }}
+  for(var n of ns){{
+    var c=TC[n.type]||'#8b949e',hi=hov&&hov.id===n.id;
+    ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+    ctx.fillStyle=hi?c:c+'88';ctx.fill();
+    if(hi){{ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();}}
+    ctx.fillStyle=hi?'#e6edf3':'#8b949e';ctx.font=(hi?'12':'10')+'px sans-serif';ctx.textAlign='center';
+    ctx.fillText(n.label,n.x,n.y+n.r+13);
+  }}
+  requestAnimationFrame(tick);
+}}
+function hit(mx,my){{for(var n of ns){{var dx=mx-n.x,dy=my-n.y;if(dx*dx+dy*dy<(n.r+8)**2)return n;}}return null;}}
+cv.onmousemove=function(e){{var r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;if(drag){{drag.x=mx;drag.y=my;drag.vx=0;drag.vy=0;return;}}hov=hit(mx,my);cv.style.cursor=hov?'pointer':'default';}};
+cv.onmousedown=function(e){{var r=cv.getBoundingClientRect();drag=hit(e.clientX-r.left,e.clientY-r.top);}};
+cv.onmouseup=function(){{drag=null;}};
+tick();
+</script></body></html>"""
+        out = proj.root / "graph-export.html"
+        out.write_text(html, encoding="utf-8")
+        return {"ok": True, "project": proj.slug, "path": str(out.relative_to(PROJECT_ROOT)), "format": "html"}
+    return {"ok": False, "error": f"unsupported format: {fmt}"}
+
+
+# ─── enhanced composite graph API (with persistence) ─────────────────────────
+
+# Optional graphify integration (partial imports allowed)
+_GRAPHIFY_AVAILABLE = False
+try:
+    from graphify.cluster import cluster
+    from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+except ImportError:
+    cluster = god_nodes = surprising_connections = suggest_questions = None
+try:
+    from graphify.export import generate_html as graphify_export_html
+except ImportError:
+    graphify_export_html = None
+if cluster is not None:
+    _GRAPHIFY_AVAILABLE = True
+
+def _get_graph_dir(proj):
+    """Get the .graph directory for a project, creating it if needed."""
+    graph_dir = proj.root / ".graph"
+    graph_dir.mkdir(exist_ok=True)
+    return graph_dir
+
+def _load_persisted_graph(proj):
+    """Load persisted graph data if available, returns None otherwise."""
+    graph_dir = _get_graph_dir(proj)
+    graph_file = graph_dir / "graph.json"
+    labels_file = graph_dir / "community_labels.json"
+
+    if not graph_file.exists():
+        return None
+
+    try:
+        data = json.loads(graph_file.read_text(encoding="utf-8"))
+        if labels_file.exists():
+            data["community_labels"] = json.loads(labels_file.read_text(encoding="utf-8"))
+        return data
+    except Exception:
+        return None
+
+def _persist_graph(proj, graph_data):
+    """Persist graph data to .graph directory."""
+    graph_dir = _get_graph_dir(proj)
+
+    # Save main graph
+    graph_file = graph_dir / "graph.json"
+    graph_file.write_text(json.dumps(graph_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Save community labels separately if present
+    if "community_labels" in graph_data:
+        labels_file = graph_dir / "community_labels.json"
+        labels_file.write_text(json.dumps(graph_data["community_labels"], ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _graph_composite_api(proj):
+    """Get composite graph data (nodes + edges + communities + cohesion + labels)."""
+    # First try to load persisted graph
+    persisted = _load_persisted_graph(proj)
+    if persisted:
+        persisted["project"] = proj.slug
+        persisted["persisted"] = True
+        return persisted
+
+    # Otherwise build from scratch
+    nodes, edges, node_map = _build_graph_data(proj)
+    community_result = _graph_community_api(proj)
+
+    result = {
+        "project": proj.slug,
+        "persisted": False,
+        "graphify_enhanced": _GRAPHIFY_AVAILABLE,
+        "nodes": [{"id": n["filename"], "label": n["title"], "type": n["type"],
+                   "word_count": n["word_count"], "tags": n.get("tags", [])} for n in nodes],
+        "edges": edges,
+        "communities": community_result["communities"],
+        "cohesion": community_result["cohesion"],
+        "community_count": community_result["community_count"],
+        "community_labels": {},
+    }
+
+    return result
+
+def _graph_rebuild_api(proj):
+    """Rebuild and persist the graph."""
+    nodes, edges, node_map = _build_graph_data(proj)
+    community_result = _graph_community_api(proj)
+
+    result = {
+        "nodes": [{"id": n["filename"], "label": n["title"], "type": n["type"],
+                   "word_count": n["word_count"], "tags": n.get("tags", [])} for n in nodes],
+        "edges": edges,
+        "communities": community_result["communities"],
+        "cohesion": community_result["cohesion"],
+        "community_count": community_result["community_count"],
+        "community_labels": {},
+    }
+
+    # Persist the graph
+    _persist_graph(proj, result)
+
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "graphify_enhanced": _GRAPHIFY_AVAILABLE,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "community_count": community_result["community_count"],
+    }
+
+def _graph_name_community_api(proj, community_id, name):
+    """Set a human-readable name for a community."""
+    # Load current persisted graph or build new one
+    data = _load_persisted_graph(proj)
+    if not data:
+        # Build and persist first
+        _graph_rebuild_api(proj)
+        data = _load_persisted_graph(proj)
+
+    # Update the label
+    if "community_labels" not in data:
+        data["community_labels"] = {}
+    data["community_labels"][community_id] = name
+
+    # Persist
+    _persist_graph(proj, data)
+
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "community_id": community_id,
+        "name": name,
+    }
+
+def _graph_get_community_api(proj, community_id):
+    """Get detailed information about a specific community."""
+    composite = _graph_composite_api(proj)
+
+    communities = composite.get("communities", {})
+    if community_id not in communities:
+        return {"ok": False, "error": f"Community not found: {community_id}"}
+
+    node_ids = communities[community_id]
+    cohesion = composite.get("cohesion", {}).get(community_id, 0)
+    label = composite.get("community_labels", {}).get(community_id, f"Community {community_id}")
+
+    # Get full node info
+    node_map = {n["id"]: n for n in composite.get("nodes", [])}
+    nodes = [node_map.get(nid, {"id": nid, "label": nid}) for nid in node_ids]
+
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "community_id": community_id,
+        "name": label,
+        "cohesion": cohesion,
+        "node_count": len(nodes),
+        "nodes": nodes,
+    }
+
+
+# ─── knowledge universe (cross-project) ───
+
+_UNIVERSE_CONFIG_FILE = PROJECT_ROOT / ".memex" / "universe_config.json"
+
+
+def _load_universe_config() -> dict:
+    """Load universe configuration."""
+    if _UNIVERSE_CONFIG_FILE.exists():
+        try:
+            return json.loads(_UNIVERSE_CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "version": 1,
+        "auto_join_new": False,
+        "auto_join_import": True,
+        "auto_join_sync": True,
+        "default_view": "2d",
+        "excluded_projects": [],
+        "pending_confirmation": [],
+        "known_projects": [],
+        "galaxy_positions": {},
+    }
+
+
+def _save_universe_config(config: dict):
+    """Save universe configuration."""
+    _UNIVERSE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _UNIVERSE_CONFIG_FILE.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _universe_project_nodes(proj):
+    """Build graph data for a single project with project-prefixed IDs."""
+    nodes, edges, node_map = _build_graph_data(proj)
+    prefixed_nodes = []
+    prefixed_edges = []
+
+    for n in nodes:
+        nid = f"{proj.slug}/{n['filename']}"
+        prefixed_nodes.append({
+            "id": nid,
+            "label": n.get("label", n["title"]),
+            "type": n.get("type", "unknown"),
+            "filename": n["filename"],
+            "word_count": n.get("word_count", 0),
+            "tags": n.get("tags", []),
+            "project": proj.slug,
+            "project_title": proj.title,
+        })
+
+    for e in edges:
+        src_id = f"{proj.slug}/{e['from']}"
+        tgt_id = f"{proj.slug}/{e['to']}"
+        prefixed_edges.append({
+            "source": src_id,
+            "target": tgt_id,
+            "type": "wikilink",
+            "project": proj.slug,
+        })
+
+    return prefixed_nodes, prefixed_edges, node_map
+
+
+def _detect_cross_project_bridges(all_nodes: list) -> list:
+    """Detect cross-project connections based on title similarity and tag overlap."""
+    import re as _re
+    bridges = []
+    from collections import defaultdict as _dd
+
+    # Group by normalized title
+    title_map = _dd(list)
+    for n in all_nodes:
+        key = _re.sub(r'[^a-z가-힣0-9]+', '', n["label"].lower())
+        if len(key) > 4:
+            title_map[key].append(n)
+
+    for key, nodes in title_map.items():
+        if len(nodes) < 2:
+            continue
+        projects = set(n["project"] for n in nodes)
+        if len(projects) < 2:
+            continue
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                if nodes[i]["project"] != nodes[j]["project"]:
+                    bridges.append({
+                        "from_node": nodes[i]["id"],
+                        "from_title": nodes[i]["label"],
+                        "from_project": nodes[i]["project"],
+                        "to_node": nodes[j]["id"],
+                        "to_title": nodes[j]["label"],
+                        "to_project": nodes[j]["project"],
+                        "similarity": 0.85,
+                        "reason": "标题相同或高度相似",
+                    })
+
+    # Also check tag overlap
+    tag_map = _dd(list)
+    for n in all_nodes:
+        for tag in n.get("tags", []):
+            tag_map[tag.lower()].append(n)
+
+    for tag, nodes in tag_map.items():
+        if len(nodes) < 2:
+            continue
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                if nodes[i]["project"] != nodes[j]["project"]:
+                    exists = any(
+                        b["from_node"] == nodes[i]["id"] and b["to_node"] == nodes[j]["id"]
+                        for b in bridges
+                    )
+                    if not exists:
+                        bridges.append({
+                            "from_node": nodes[i]["id"],
+                            "from_title": nodes[i]["label"],
+                            "from_project": nodes[i]["project"],
+                            "to_node": nodes[j]["id"],
+                            "to_title": nodes[j]["label"],
+                            "to_project": nodes[j]["project"],
+                            "similarity": 0.5,
+                            "reason": f"共享标签: {tag}",
+                        })
+
+    return bridges
+
+
+def _build_universe_graph(include_hidden: bool = False) -> dict:
+    """构建全项目统一图谱。"""
+    config = _load_universe_config()
+    excluded = set(config.get("excluded_projects", []))
+
+    all_nodes = []
+    all_edges = []
+    project_info = {}
+
+    for proj in project_registry.list_projects():
+        if not include_hidden and proj.slug in excluded:
+            continue
+
+        nodes, edges, node_map = _universe_project_nodes(proj)
+        all_nodes.extend(nodes)
+        all_edges.extend(edges)
+
+        project_info[proj.slug] = {
+            "title": proj.title,
+            "description": proj.description,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+        }
+
+    bridges = _detect_cross_project_bridges(all_nodes)
+
+    return {
+        "universe": {
+            "total_nodes": len(all_nodes),
+            "total_edges": len(all_edges),
+            "projects": project_info,
+        },
+        "nodes": all_nodes,
+        "edges": all_edges,
+        "bridges": bridges,
+    }
 
 
 # ─── status ───
@@ -2464,6 +3444,173 @@ Summarize fixes by Critical / Warning / Info."""
 
 # ─── Writing Companion ───
 
+# ─── Link Validation & Repair ───
+
+def _scan_wiki_pages(wiki_dir):
+    """Scan all wiki .md files, return (filename, content) pairs."""
+    pages = {}
+    if not wiki_dir or not wiki_dir.exists():
+        return pages
+    for f in sorted(wiki_dir.rglob("*.md")):
+        try:
+            content = f.read_text(encoding="utf-8")
+            # Extract title from frontmatter
+            title_match = re.search(r'^title:\s*["\']?(.+?)["\']?$', content, re.M)
+            title = title_match.group(1).strip() if title_match else f.stem.replace('-', ' ').title()
+            rel = f.relative_to(wiki_dir)
+            pages[rel.as_posix()] = {"content": content, "title": title, "path": str(f)}
+        except Exception:
+            pass
+    return pages
+
+
+def validate_links_api(project_slug=None):
+    """Scan all wiki pages for broken links, orphan references, missing citations."""
+    proj = project_registry.get_project(project_slug)
+    wiki_dir = proj.wiki_dir
+    issues = {
+        "broken_links": [],      # [[unknown-page]] that don't match any file
+        "self_broken": [],       # Pages that link to themselves (usually intentional but flag)
+        "orphan_references": [],  # Page content mentions [[page]] without corresponding file
+        "missing_citations": [],  # Factual claims without [^src-*]
+        "summary": {},
+    }
+    pages = _scan_wiki_pages(wiki_dir)
+    known_filenames = set(pages.keys())
+    # Build slug → filename mapping
+    slug_map = {}
+    for fn in known_filenames:
+        slug_map[fn.replace("/", "-").lower()] = fn
+        slug_map[fn.replace("/", "_").lower()] = fn
+        slug_map[fn.lower().replace(".md", "")] = fn
+
+    import re as _re
+    # Find all wikilinks
+    wikilink_re = _re.compile(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]')
+    citation_re = _re.compile(r'\[\^src-[a-zA-Z0-9_-]+\]')
+
+    total_claims = 0
+    cited_claims = 0
+    for fn, info in pages.items():
+        content = info["content"]
+        # Check for wikilinks
+        matches = wikilink_re.findall(content)
+        for target in matches:
+            target_lower = target.strip().lower()
+            # Normalize: remove spaces, hyphens for matching
+            target_slug = target_lower.replace(" ", "-")
+            matched = False
+            # Check direct filename match
+            if (target_slug + ".md") in known_filenames:
+                matched = True
+            # Check slug_map
+            elif target_slug in slug_map:
+                matched = True
+            # Try partial match (common pattern)
+            if not matched:
+                for known in known_filenames:
+                    known_slug = known.split("/")[-1].replace("-", " ").replace(".md", "").lower()
+                    if target_slug[:4] in known_slug or known_slug[:4] in target_slug:
+                        matched = True
+                        break
+            if not matched:
+                issues["broken_links"].append({
+                    "from_page": fn,
+                    "target": target.strip(),
+                    "hint": f"No matching page found. Consider creating [[{target.strip()}]] or removing the link."
+                })
+        # Check for factual claims missing citations
+        # Simple heuristic: sentences with common claim patterns
+        lines = content.split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("---") or line.startswith("-"):
+                continue
+            # Check if line has potential claim indicators
+            claim_indicators = ["is", "are", "was", "the", "this", "that"]
+            has_claim_hint = any(ind in line.lower() for ind in claim_indicators)
+            if has_claim_hint and len(line) > 30 and "[^" not in line and not line.startswith(">") and not line.startswith("*"):
+                total_claims += 1
+                if citation_re.search(line):
+                    cited_claims += 1
+
+    issues["missing_citations"] = [] if cited_claims / max(total_claims, 1) > 0.8 else [f"{total_claims - cited_claims}/{total_claims} potentially uncited claims detected"]
+
+    summary = {
+        "total_pages": len(pages),
+        "broken_link_count": len(issues["broken_links"]),
+        "citation_health": f"{cited_claims}/{total_claims}" if total_claims else "N/A",
+        "critical": len(issues["broken_links"]) > 5,
+    }
+    issues["summary"] = summary
+    return {"ok": True, "project": proj.slug, "issues": issues, "summary": summary}
+
+
+def fix_links_batch_api(project_slug, auto_create=False, alias_map=None):
+    """Batch fix broken links across wiki pages."""
+    proj = project_registry.get_project(project_slug)
+    wiki_dir = proj.wiki_dir
+    alias_map = alias_map or {}
+
+    pages = _scan_wiki_pages(wiki_dir)
+    changes = []
+    new_pages_created = []
+
+    for fn, info in pages.items():
+        content = info["content"]
+        changed = False
+        # Apply alias replacements
+        for old_target, new_target in alias_map.items():
+            old_link = f"[[{old_target}]]"
+            new_link = f"[[{new_target}]]"
+            if old_link in content:
+                content = content.replace(old_link, new_link)
+                changes.append({"type": "alias_replace", "from": fn, "old": old_target, "new": new_target})
+                changed = True
+        # Auto-create missing pages
+        if auto_create:
+            import re as _re2
+            wikilink_re = _re2.compile(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]')
+            targets = wikilink_re.findall(content)
+            for target in targets:
+                target_clean = target.strip()
+                target_slug = target_clean.replace(" ", "-")
+                candidate = (wiki_dir / (target_slug + ".md")).resolve()
+                if not candidate.exists() and candidate.parent == wiki_dir.resolve():
+                    # Create stub page
+                    stub_content = f"""---
+title: "{target_clean}"
+type: concept
+tags: []
+created: 2026-05-11
+last_updated: 2026-05-11
+source_count: 0
+confidence: low
+status: active
+---
+
+> [!warning] Stub page
+> This page was auto-created by link repair. Add proper content.
+"""
+                    try:
+                        candidate.write_text(stub_content, encoding="utf-8")
+                        new_pages_created.append(target_clean)
+                        changes.append({"type": "auto_created", "page": target_clean})
+                    except Exception as e:
+                        changes.append({"type": "error", "page": target_clean, "error": str(e)})
+        if changed:
+            # Write back
+            pages[fn]["content"] = content
+
+    result = {"ok": True, "project": proj.slug, "changes": changes, "new_pages": new_pages_created}
+    # Git commit if there were changes
+    if changes:
+        git_mgr._stage_all(project=proj)
+        git_mgr._run("commit", "-m", f"fix-links: batch repair ({len(changes)} changes)")
+        result["committed"] = True
+    return result
+
+
 def do_write(topic, length="medium", style="blog", project_slug=None):
     if not topic or not topic.strip():
         return {"ok": False, "error": "Topic is required"}
@@ -2734,14 +3881,20 @@ Suggestions only — no preamble."""
 # ─── 대시보드 도우미 챗봇 ───
 # 대시보드 자체에 대한 질문에 답변. 위키 내용이 아니라 기능/사용법.
 
-ASSISTANT_CONTEXT_EN = """You are "Claude", a friendly dashboard assistant for Memex (a personal knowledge base built on the Karpathy LLM Wiki pattern).
-Your job is to answer questions about HOW THE DASHBOARD WORKS — its features, how to use them, where to click, what keyboard shortcuts exist, etc.
+ASSISTANT_CONTEXT_EN = """You are "Claude", a friendly AI assistant for **Memex** — an LLM-powered personal knowledge base that continuously builds, maintains, and updates enterprise-grade wikis.
 
-Do NOT answer wiki content questions (those go through /api/query). Redirect user to the Query feature instead.
+ABOUT MEMEX (this IS a special wiki platform you help manage):
+- Architecture: Obsidian vault with raw/ (immutable sources, 4-layer protection), wiki/ (LLM-maintained knowledge pages with YAML frontmatter), projects/ (multi-project support).
+- Schema: CLAUDE.md defines everything — frontmatter rules (type/status/confidence/source_count), inline citations [^src-*], wikilinks [[page-name]], contradiction resolution policy.
+- Wiki lifecycle: Ingest (add raw source → Claude creates/updates wiki pages) → Query (ask about wiki content) → Write (draft pages) → Compare (side-by-side) → Lint (citation health check) → Reflect (pattern analysis) → Review (quality assessment).
+- Git integration: every Ingest = automatic git commit. All changes revertible via History.
+- Graph view: wikilinks form a knowledge graph. BFS community detection finds topic clusters. Isolated pages have no links — adding wikilinks improves KB health.
+- MCP server exposes wiki operations programmatically (list pages, search, create/update pages, validate/fix links).
+- Optional Graphify integration: Leiden/Louvain clustering, god-nodes filtering, surprising connections, community naming, interactive HTML export.
+- Dashboard languages: English, 한국어, 中文.
+- Claude CLI must be installed and configured. Model selector: Opus/Sonnet/Haiku/Default.
 
-Key facts about the dashboard:
-- Pattern: Karpathy's LLM Wiki — Claude (via Claude Code CLI) builds a persistent wiki from sources in raw/.
-- raw/ is immutable (4-layer protection). wiki/ is owned by Claude. CLAUDE.md is the schema.
+DASHBOARD FEATURES:
 - Toolbar has 5 categories:
   * Work: Ingest, Query, Write, Compare
   * Analyze: Lint, Reflect, Review, Provenance
@@ -2756,17 +3909,25 @@ Key facts about the dashboard:
 - Inline citations [^src-*] rendered as numbered badges.
 - Adaptive indexing: flat (<50) → hierarchical (50-200) → indexed (>200).
 
-Keep answers SHORT (2-4 sentences) and actionable. If the user asks about wiki content, say "That's a wiki question — use the Query feature (toolbar → Work → Query)." in a friendly way.
+WIKI ACTIONS FROM CHAT: Users can type natural language commands like "run lint", "run the wiki loop", "check for broken links", "run reflect", "any new sources?" — these are detected and executed directly without Claude CLI invocation. For conversational questions, answer normally.
+
+If asked about dashboard usage, give direct instructions. Keep answers SHORT (2-4 sentences). For deep wiki content analysis, suggest the Query feature.
 """
 
-ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, Memex(Karpathy LLM Wiki 패턴 기반 개인 지식 베이스)의 친근한 도우미입니다.
-당신의 역할은 **대시보드 자체의 기능과 사용법**에 대한 질문에 답변하는 것입니다 — 어디를 클릭하는지, 단축키는 뭔지 등.
+ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, **Memex** — LLM 기반 개인 지식 베이스의 친근한 도우미입니다. Memex는 엔터프라이즈급 위키를 지속적으로 구축·유지·갱신합니다.
 
-위키 내용에 관한 질문은 답하지 마세요 (그건 /api/query 담당). 대신 Query 기능을 안내하세요.
+MEMEX 소개 (이 시스템 관리 도움):
+- 구조: Obsidian vault — raw/(불변 원본, 4중 보호), wiki/(LLM 유지 보드), projects/(멀티프로젝트 지원).
+- 스키마: CLAUDE.md가 전체 정의 — frontmatter 규칙(type/status/confidence/source_count), 인라인 인용 [^src-*], wikilink [[page-name]], 모순 해결 정책.
+- Wiki 순환: Ingest(raw source 추가 → Claude가 wiki 페이지 생성/수정) → Query(wiki 내용 질의) → Write(草稿 작성) → Compare(비교) → Lint(인용 건강도 점검) → Reflect(패턴 분석) → Review(품질 평가).
+- Git 통합: 모든 Ingest = 자동 git commit. History에서 모든 변경 되돌리기 가능.
+- Graph 뷰: wikilink가 지식 그래프 형성. BFS 커뮤니티 감지로 주제 분류. Isolated 페이지는 링크 없음 — wikilink 추가로 KB 헬스 개선.
+- MCP 서버가 wiki 작업을 프로그래매틱으로 노출 (페이지 목록, 검색, 생성/수정, 링크 검증/수정).
+- Optional Graphify: Leiden/Louvain 클러스터링, god-nodes 필터링, surprising connections, 커뮤니티 명명, HTML 내보내기.
+- 대시보드 언어: English, 한국어, 中文.
+- Claude CLI 설치 필요. 모델 선택: Opus/Sonnet/Haiku/Default.
 
 대시보드 핵심 정보:
-- 패턴: Karpathy의 LLM Wiki — Claude(Claude Code CLI)가 raw/의 원본으로부터 영속 위키를 구축.
-- raw/는 불변(4단계 보호). wiki/는 Claude 소유. CLAUDE.md는 스키마.
 - 툴바는 5개 카테고리:
   * 작업: 수집, 질문, 작성, 비교
   * 분석: 검진, 성찰, 복습, 출처
@@ -2774,24 +3935,32 @@ ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, Memex(Karpathy LLM Wi
   * 만들기: + 폴더, + 페이지
   * 더보기: CLAUDE.md, 가이드
 - 사이드바: 우측 경계 드래그로 리사이즈(220-500px). Cmd/Ctrl+B로 토글. 폴더 **이름** 클릭(화살표 아님) → 연속 폴더 뷰.
-- 헤더: 언어 토글(English / 한국어 / 中文), 모델 선택(Opus/Sonnet/Haiku/Default), Wiki Ratio 게이지, 인덱스 배지.
-- 상태 바(좌측 하단): raw facts만. Claude CLI + Obsidian(process + vault_open).
+- 헤더: 언어 토글, 모델 선택(Opus/Sonnet/Haiku/Default), Wiki Ratio 게이지, 인덱스 배지.
+- 상태 바(좌측 하단): Claude CLI + Obsidian(process + vault_open).
 - 페이지별: 편집, Slides(Marp 내보내기), 삭제.
-- 모든 수집 = git 커밋. 이력에서 되돌리기 가능.
+- 모든 수집 = git 커밋. History에서 되돌리기.
 - 인라인 인용 [^src-*]는 숫자 배지로 렌더링.
 - 적응형 인덱싱: flat(<50) → hierarchical(50-200) → indexed(>200).
 
-답변은 **짧게(2~4문장)**, 행동 중심으로. 사용자가 위키 내용을 물으면 "그건 위키 질문이에요 — Query 기능(툴바 → 작업 → 질문)을 사용해 보세요." 라고 친근하게 안내.
+대화 중 Wiki 명령: "run lint", "wiki loop 돌려", "broken link 찾아", "reflect 해줘" 등 자연어로 wiki 작업을 직접 실행. 일반 질문에는 정상 답변.
+
+답변은 **짧게(2~4문장)**. 위키 심화 분석은 Query 기능 안내.
 """
 
-ASSISTANT_CONTEXT_ZH = """你是 "Claude"，Memex（基于 Karpathy LLM Wiki 模式的个人知识库）的友好控制台助手。
-你的职责是回答**本控制台如何使用**——功能、点击位置、快捷键等。
+ASSISTANT_CONTEXT_ZH = """你是 "Claude"，**Memex**（LLM 驱动的个人知识库平台）的友好助手。Memex 持续构建、维护、更新企业级知识库。
 
-不要回答 wiki 正文类问题（应走 /api/query）。请引导用户使用「问答(Query)」功能。
+关于 Memex（这是你需要帮助管理的系统本身）：
+- 架构：Obsidian vault — raw/（不可变源文件，四层保护），wiki/（LLM 维护的知识页面），projects/（多项目支持）。
+- 模式：CLAUDE.md 定义一切 — frontmatter 规则（type/status/confidence/source_count）、内联引用 [^src-*]、wikilink [[page-name]]、矛盾解决策略。
+- Wiki 循环：Ingest（添加 raw 源 → Claude 创建/更新 wiki 页面）→ Query（查询 wiki 内容）→ Write（起草页面）→ Compare（对比）→ Lint（引用健康度检查）→ Reflect（模式分析）→ Review（质量评估）。
+- Git 集成：每次 Ingest = 自动 git commit。所有变更可通过 History 恢复。
+- 图谱视图：wikilink 形成知识图谱。BFS 社区检测识别主题簇。孤立页面无链接 — 添加 wikilink 可提升知识库健康度。
+- MCP Server 程序化暴露 wiki 操作（列出页面、搜索、创建/更新、链接验证/修复）。
+- 可选 Graphify 集成：Leiden/Louvain 聚类、god-nodes 过滤、意外连接发现、社区命名、交互式 HTML 导出。
+- 控制台语言：English, 한국어, 中文。
+- 需安装配置 Claude CLI。模型选择：Opus/Sonnet/Haiku/Default。
 
 控制台要点：
-- 模式：Karpathy LLM Wiki — Claude（Claude Code CLI）从 raw/ 中来源构建持久 wiki。
-- raw/ 不可变（四层保护）。wiki/ 由 Claude 维护。CLAUDE.md 是模式说明文件。
 - 工具栏 5 类：工作（收录、问答、写作、比较）；分析（检查、反思、复习、引证）；浏览（搜索、图谱、历史）；创建（+文件夹、+页面）；更多（CLAUDE.md、指南）。
 - 侧栏：拖右缘 220–500px。Cmd/Ctrl+B 收起。在树中点击文件夹**名称**（非小箭头）进入连续阅读。
 - 标题栏：语言切换（English / 한국어 / 中文）、模型、Wiki Ratio、索引导航。
@@ -2801,22 +3970,387 @@ ASSISTANT_CONTEXT_ZH = """你是 "Claude"，Memex（基于 Karpathy LLM Wiki 模
 - 内联引用 [^src-*] 渲染为数字角标。
 - 索引策略：flat (<50) → hierarchical (50-200) → indexed (>200)。
 
-回答要**短（2–4 句）**、可操作。若问 wiki 正文内容，请友好说明：「这是 wiki 问题，请用工具栏 → 工作 → 问答(Query)。」
+聊天 Wiki 命令：用户可以说 "run lint"、"wiki loop"、"check broken links"、"reflect" 等自然语言直接执行 wiki 操作。普通问答正常回答。
+
+回答要**短（2–4 句）**。涉及深层 wiki 内容分析时建议用 Query 功能。
+"""
+
+# Context for project-specific knowledge base Q&A
+ASSISTANT_CONTEXT_KB_QA = """You are "Claude", a friendly AI assistant for the **{project_name}** knowledge base.
+Your job is to answer questions about THIS KNOWLEDGE BASE using the wiki context provided below.
+
+Rules:
+- If the answer can be found in the wiki context, use it directly with inline citations [[page-name]].
+- If the context doesn't contain enough information, say so honestly rather than making things up.
+- Keep answers SHORT (2-4 sentences) and cite sources when possible.
+- If asked about dashboard features (not wiki content), redirect to Query feature.
+
+=== WIKI CONTEXT START ===
+{WIKI_CONTEXT}
+=== WIKI CONTEXT END ===
 """
 
 
-def do_assistant_chat(question, lang="en", history=None):
-    """대시보드 헬퍼 챗봇 — Claude CLI를 짧은 프롬프트로 호출"""
+# ─── Chat Action Dispatch (regex → LLM fallback → CLI execution) ─────────────
+
+import re as _re
+import json as _json
+
+_CHAT_ACTION_DESCRIPTIONS = {
+    "lint": "Check wiki citation health, formatting, orphaned pages, and overall quality. Triggered by 'lint', 'check health/quality', 'wiki 检查', 'lint 실행', etc.",
+    "lint_fix": "Auto-repair wiki lint issues. Triggered by 'fix lint', 'auto repair wiki', '修复 lint', 'lint 수정', etc.",
+    "reflect": "Analyze wiki patterns from recent ingests. Triggered by 'reflect', 'analyze patterns', '反思分析', '성찰 분석', etc.",
+    "validate_links": "Check for broken/dead wiki links. Triggered by 'broken links', 'validate links', '检查链接', '링크 검사', etc.",
+    "detect_sources": "Scan for raw sources not yet cited. Triggered by 'new sources', 'uncited files', '未收录源文件', '새로운 소스', etc.",
+    "loop": "Full wiki maintenance cycle (lint→fix→reflect). Triggered by 'wiki loop', 'maintenance', '执行循环', 'wiki 정비', '循环', etc.",
+    "schedule_help": "Set up periodic wiki tasks via cron. Triggered by 'schedule lint', 'daily wiki', '定时任务', '스케줄', etc.",
+}
+
+_CHAT_ACTION_EXAMPLES = [
+    "run the wiki maintenance loop",
+    "lint 一下",
+    "帮我检查一下 wiki 的健康状况",
+    "fix all formatting issues automatically",
+    "看看有没有还没被引用的源文件",
+    "run a reflect analysis on the last 5 ingests",
+    "schedule a weekly link validation",
+    "wiki 정리 돌려줘",
+    "每天自动检查一次 wiki",
+    "把所有缺失引用的源文件列出来",
+]
+
+
+def _llm_classify_chat_intent(question: str, timeout: int = 15) -> dict:
+    """Use CLI-based LLM to classify user intent into a wiki action or conversational.
+
+    Returns {action, params} where action is one of _CHAT_ACTION_DESCRIPTIONS
+    keys or "conversational". Falls back to regex on failure.
+    """
+    fast = _regex_detect_chat_command(question)
+    if fast.get("action", "conversational") != "conversational":
+        return fast  # Regex already found it — no need for LLM
+
+    # LLM classification for ambiguous cases (via CLI)
+    action_list = "\n".join(f"- **{k}**: {v}" for k, v in _CHAT_ACTION_DESCRIPTIONS.items())
+    examples = "\n".join(f"  • {e}" for e in _CHAT_ACTION_EXAMPLES)
+
+    prompt = f"""You are an intent classifier for a Memex wiki chat.
+
+AVAILABLE ACTIONS:
+{action_list}
+
+EXAMPLES:
+{examples}
+
+RULES:
+- If the user is requesting a wiki operation, classify it as the matching action.
+- If asking a general question, classify as "conversational".
+- If ambiguous, lean toward "conversational".
+- User may write in English, Korean, or Chinese.
+- "schedule" means SET UP a recurring task, not run now.
+
+Return ONLY JSON: {{"action": "<action_name>", "params": {{}}}}
+For "loop": params may include {{"steps": ["lint","lint_fix","reflect"], "include_ingest": false}}
+For "reflect": params may include {{"window": "last-N-ingests"}}
+
+User message: "{question}"
+JSON:"""
+
+    ok, text, err = run_claude(prompt, timeout=timeout, cwd=str(PROJECT_ROOT), project=None, force_cli=False)
+    if ok and text:
+        try:
+            ts = text.strip()
+            if ts.startswith("{"):
+                parsed = _json.loads(ts[:ts.rfind("}")+1])
+                act = parsed.get("action", "").lower()
+                if act in _CHAT_ACTION_DESCRIPTIONS:
+                    return {"action": act, "params": parsed.get("params", {})}
+                for k in _CHAT_ACTION_DESCRIPTIONS:
+                    if k in act or act in k:
+                        return {"action": k, "params": parsed.get("params", {})}
+        except (_json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+    return fast  # LLM failed — fall back to regex
+
+
+def _regex_detect_chat_command(question: str) -> dict:
+    """Regex-based intent detection for wiki action commands.
+
+    Returns {action, params} or {"action": "conversational", "params": {}}.
+    """
+    q = question.lower().strip()
+
+    # ── Schedule commands (checked early — "schedule a lint" ≠ run lint now) ──
+    if _re.search(r"(schedule|cron|timer|periodic|every\s+\w+)", q):
+        action_words = _re.search(r"(lint|loop|reflect|valid|check|ingest|maintenance|clean)", q)
+        if action_words:
+            return {"action": "schedule_help", "params": {"detected_action": action_words.group(1)}}
+
+    # ── Loop ──
+    loop_pats = [
+        r"(run|start|execute|begin)\s*(the)?\s*(wiki\s*)?(loop|maintenance(\s*loop)?|maintenance\s*cycle)",
+        r"(run|start|execute)\s*(a\s*)?(wiki\s*)?(maint(en|ain)|clean)(\s*(up|loop|cycle))?",
+        r"do\s*(a\s*)?(wiki\s*)?(loop|maintenance|clean\s*up)",
+        r"(wiki\s*)?(loop|maintenance(\s*loop|cycle)?)\b",
+    ]
+    for pat in loop_pats:
+        if _re.search(pat, q):
+            steps = []
+            if _re.search(r"(lint|fix|repair)", q):
+                if _re.search(r"(fix|repair)", q):
+                    steps.extend(["lint", "lint_fix"])
+                else:
+                    steps.append("lint")
+            if _re.search(r"(reflect|analy[sz]|pattern)", q):
+                steps.append("reflect")
+            if _re.search(r"(valid|link|broken|orphan)", q):
+                steps.append("validate_links")
+            if _re.search(r"(ingest|import|new.source|add.source)", q):
+                return {"action": "loop", "params": {"steps": steps or ["lint", "lint_fix", "reflect"], "include_ingest": True}}
+            return {"action": "loop", "params": {"steps": steps or ["lint", "lint_fix", "reflect"]}}
+
+    # ── Lint Fix (before lint — more specific) ──
+    if _re.search(r"(lint|check).*fix|fix.*(lint|citation|link|format|wiki)|auto.*(fix|repair).*wiki", q):
+        return {"action": "lint_fix", "params": {}}
+
+    # ── Validate Links ──
+    if _re.search(r"valid.*link|check.*(broken|dead|orphan)|link.*(valid|check|broken)|find.*(broken|orphan|dead).*link", q):
+        return {"action": "validate_links", "params": {}}
+
+    # ── Lint ──
+    if _re.search(r"(run\s*)?lint|check.*(wiki|citation|health)|wiki.*(lint|health|quality)|health.*(check|wiki)", q):
+        return {"action": "lint", "params": {}}
+
+    # ── Reflect ──
+    if _re.search(r"(run\s*)?reflect|analy[sz].*pattern|pattern.*analy[sz]|reflect.*wiki|wiki.*reflect", q):
+        window = "last-10-ingests"
+        m = _re.search(r"last.?(\d+)", q)
+        if m:
+            window = f"last-{m.group(1)}-ingests"
+        return {"action": "reflect", "params": {"window": window}}
+
+    # ── Detect New Sources ──
+    if _re.search(r"(new|uncited|missing).{0,10}(source|file|raw)|check.*new.*source|any.*source.*ingest|source.*ingest", q):
+        return {"action": "detect_sources", "params": {}}
+
+    # ── Chinese/Korean fallback patterns (regex safety net for common phrases) ──
+    # LLM classifier handles full semantics; these cover timeout/failure cases.
+    zh_ko_map = {
+        r"清理循环|循环运行|跑一次循环|维护循环|完整.*维护|运行.*维护|完整维护|维护执行|循环": "loop",
+        r"检查.*健康|体检.*wiki|质量检查|运行.*lint|检查.*引用": "lint",
+        r"修复.*问题|自动修复|fix.*问题": "lint_fix",
+        r"模式分析|反思分析|运行.*反思|成察|성찰": "reflect",
+        r"链接.*检查|检查.*链接|死链|断链|无效链接|링크.*검사": "validate_links",
+        r"未收录|未引用|新.*源|源文件.*没|新的.*source|새.*소스|引用.*没|引用.*源|列出.*源|列出.*引用|有没有.*源": "detect_sources",
+        r"定时|每天|每周|周期|周期性|计划|스케줄": "schedule_help",
+        r"정리.*돌려|정비.*실행|정비.*돌려|wiki.*정비|wiki.*실행|wiki.*체크": "loop",
+        r"lint.*실행|lint.*해줘|lint.*돌려": "lint",
+        r"fix.*수정|수정.*자동": "lint_fix",
+        r"링크.*깨짐|깨진.*링크|링크.*체크": "validate_links",
+    }
+    for pat, act in zh_ko_map.items():
+        if _re.search(pat, q):
+            return {"action": act, "params": {}}
+
+    return {"action": "conversational", "params": {}}
+
+
+def _execute_chat_action(action: str, params: dict, project: str | None) -> dict:
+    """Execute a wiki operation detected from chat. Returns structured result."""
+    import sys
+    dashboard_dir = Path(__file__).resolve().parent
+    if str(dashboard_dir) not in sys.path:
+        sys.path.insert(0, str(dashboard_dir))
+
+    try:
+        import wiki_ops
+    except ImportError:
+        return {"ok": False, "error": "wiki_ops module not available", "action": action}
+
+    proj_slug = project or ""
+
+    if action == "lint":
+        result = wiki_ops.op_lint(project=proj_slug)
+        if result.get("ok"):
+            summary = _summarize_lint_result(result)
+            return {
+                "ok": True, "action": "lint",
+                "title": "Lint Complete",
+                "summary": summary,
+                "detail": result.get("output", "")[:1500],
+                "suggestions": ["Run Lint Fix to auto-repair issues", "Run Reflect for pattern analysis"],
+            }
+        return {"ok": False, "action": "lint", "error": result.get("error", "Unknown error")}
+
+    elif action == "lint_fix":
+        result = wiki_ops.op_lint_fix(project=proj_slug)
+        if result.get("ok"):
+            return {
+                "ok": True, "action": "lint_fix",
+                "title": "Auto-Fix Applied",
+                "summary": result.get("output", "")[:500],
+                "suggestions": ["Run Lint to verify fixes", "Run Reflect next"],
+            }
+        return {"ok": False, "action": "lint_fix", "error": result.get("error", "Unknown error")}
+
+    elif action == "reflect":
+        result = wiki_ops.op_reflect(window=params.get("window", "last-10-ingests"), project=proj_slug)
+        if result.get("ok"):
+            return {
+                "ok": True, "action": "reflect",
+                "title": "Reflection Complete",
+                "summary": result.get("output", "")[:1000],
+                "suggestions": ["Run Lint to check citation health", "View updated wiki pages"],
+            }
+        return {"ok": False, "action": "reflect", "error": result.get("error", "Unknown error")}
+
+    elif action == "validate_links":
+        result = wiki_ops.op_validate_links(project=proj_slug)
+        if result.get("ok"):
+            total = result.get("total_links", 0)
+            broken = result.get("broken_links", [])
+            return {
+                "ok": True, "action": "validate_links",
+                "title": "Link Validation",
+                "summary": f"Checked {total} links. Found {len(broken)} broken link(s).",
+                "broken_links": broken[:10],
+                "suggestions": ["Fix broken links manually", "Run Lint for more details"],
+            }
+        return {"ok": False, "action": "validate_links", "error": result.get("error", "Unknown error")}
+
+    elif action == "detect_sources":
+        new_sources = wiki_ops.detect_new_sources(project=proj_slug)
+        uncited = [s for s in new_sources if not s.get("cited")]
+        if uncited:
+            source_list = "\n".join(f"  • `{s['path']}`" for s in uncited[:10])
+            return {
+                "ok": True, "action": "detect_sources",
+                "title": f"Found {len(uncited)} Uncited Source(s)",
+                "summary": f"{len(uncited)} source file(s) in raw/ have not been ingested into the wiki yet.",
+                "sources": source_list,
+                "suggestions": ["Run Loop with Ingest to process them", "View sources in the Ingest tab"],
+            }
+        return {
+            "ok": True, "action": "detect_sources",
+            "title": "All Sources Ingested",
+            "summary": "All raw source files have been cited in wiki pages. No new sources to ingest.",
+        }
+
+    elif action == "loop":
+        steps = params.get("steps", ["lint", "lint_fix", "reflect"])
+        include_ingest = params.get("include_ingest", False)
+        result = wiki_ops.run_loop(
+            project=proj_slug, steps=steps, include_ingest=include_ingest,
+            continue_on_error=True,
+        )
+        if result.get("ok"):
+            lines = []
+            for sr in result.get("steps_results", []):
+                status_icon = "✓" if sr.get("status") == "ok" else "✗" if sr.get("status") == "failed" else "–"
+                lines.append(f"  {status_icon} {sr['name']}: {sr['status']} ({sr.get('duration_sec', 0):.0f}s)")
+            return {
+                "ok": True, "action": "loop",
+                "title": f"Wiki Loop Complete ({result.get('total_duration_sec', 0):.0f}s)",
+                "summary": "Steps executed:\n" + "\n".join(lines),
+                "suggestions": ["Run again to maintain wiki health", "Check graph for new connections"],
+            }
+        return {"ok": False, "action": "loop", "error": result.get("error", "Unknown error")}
+
+    elif action == "schedule_help":
+        detected = params.get("detected_action", "wiki operation")
+        return {
+            "ok": True, "action": "schedule_help",
+            "title": "Scheduling",
+            "summary": f"To schedule a periodic {detected}, use the Schedules tab in the dashboard.\n\n"
+                       f"Examples:\n"
+                       f"  • Daily lint at 3am: `0 3 * * *`\n"
+                       f"  • Every 6 hours: `0 */6 * * *`\n"
+                       f"  • Weekly on Monday: `0 9 * * 1`\n\n"
+                       f"Or I can guide you through creating one via the dashboard API.",
+            "suggestions": ["Open Schedules tab", "Run the operation now instead"],
+        }
+
+    return {"ok": False, "action": action, "error": f"Unknown action: {action}"}
+
+
+def _summarize_lint_result(result: dict) -> str:
+    """Create a short summary from a lint result."""
+    output = result.get("output", "")
+    critical = _re.findall(r"- \[ \] (.*)", output)
+    if not critical:
+        return "No critical issues found. Wiki is healthy!"
+    crit = [c for c in critical if "critical" in c.lower() or "Critical" in output.split(c)[0][-50:]]
+    if crit:
+        return f"Found {len(critical)} issue(s). Top: " + crit[0][:80]
+    return f"Found {len(critical)} issue(s) to review."
+
+
+def do_assistant_chat(question, lang="en", history=None, project=None):
+    """대시보드 헬퍼 챗봇 — Claude CLI를 짧은 프롬프트로 호출.
+    project 매개변수가 있으면 해당 프로젝트의 wiki 컨텍스트를 포함.
+    Wiki action commands are detected first and executed directly."""
+    import os
     if not question or not question.strip():
         return {"ok": False, "error": "Empty question"}
     history = history or []
-    # 간단한 대화 형식
-    if lang == "ko":
+
+    # Step 1: Intent classification (regex → LLM fallback → CLI execution)
+    cmd = _llm_classify_chat_intent(question)
+    action_name = cmd.get("action", "")
+    if action_name and action_name != "conversational":
+        return _execute_chat_action(action_name, cmd.get("params", {}), project)
+
+    # Build wiki context if project specified
+    wiki_context = ""
+    if project:
+        try:
+            proj = project_registry.get_project(project)
+            wiki_dir = getattr(proj, "wiki_dir", None)
+            if wiki_dir and wiki_dir.exists():
+                parts = []
+                idx = wiki_dir / "index.md"
+                if idx.exists():
+                    try:
+                        parts.append("---INDEX---\n" + idx.read_text(encoding="utf-8")[:3000])
+                    except Exception:
+                        pass
+                # Top 20 most recently modified pages as quick context
+                md_files = []
+                for root, dirs, files in os.walk(str(wiki_dir)):
+                    for f in files:
+                        if f.endswith(".md"):
+                            fp = os.path.join(root, f)
+                            try:
+                                mt = os.path.getmtime(fp)
+                                md_files.append((fp, mt))
+                            except OSError:
+                                pass
+                md_files.sort(key=lambda x: x[1], reverse=True)
+                for fp, _ in md_files[:20]:
+                    rel = os.path.relpath(fp, str(wiki_dir))
+                    try:
+                        content = open(fp, encoding="utf-8").read(500)
+                        parts.append(f"---PAGE:{rel}---\n{content}")
+                    except Exception:
+                        pass
+                wiki_context = "\n\n".join(parts)
+        except Exception as exc:
+            wiki_context = f"(Error loading wiki context: {exc})"
+
+    # Select context based on whether project is specified
+    if wiki_context:
+        ctx = ASSISTANT_CONTEXT_KB_QA.format(
+            project_name=project,
+            WIKI_CONTEXT=wiki_context[:5000]
+        )
+    elif lang == "ko":
         ctx = ASSISTANT_CONTEXT_KO
     elif lang == "zh":
         ctx = ASSISTANT_CONTEXT_ZH
     else:
         ctx = ASSISTANT_CONTEXT_EN
+
     hist_text = ""
     for h in history[-4:]:
         role = "User" if h.get("role") == "user" else "Assistant"
@@ -3077,6 +4611,36 @@ def api_cli_test():
         return {"ok": False, "resolved_executable": exe, "cli_type": ct, "error": str(e)[:400], "hints": hints}
 
 
+def api_ai_test():
+    """Real end-to-end AI test — actually sends a prompt through configured provider."""
+    # Simple prompt that should get a short response regardless of configuration
+    prompt = "Reply with exactly 'OK' in one word. Nothing else."
+    provider = SETTINGS.get("ai_provider", "cli")
+
+    if provider == "openai_compatible" and _openai_http_ready():
+        ok, text, err = openai_chat_completion([{"role": "user", "content": prompt}], timeout=30)
+    else:
+        ok, text, err = run_claude(prompt, timeout=30, project=None, force_cli=False)
+
+    resp = (text or "").strip()[:500]
+    result = {
+        "ok": ok,
+        "provider": provider,
+        "response": resp,
+        "valid": ok and len(resp) > 0,
+    }
+    if err:
+        result["error"] = err[:300]
+    # For CLI mode, also include CLI probe info
+    if provider != "openai_compatible":
+        try:
+            cli_info = api_cli_test()
+            result["cli_probe"] = cli_info
+        except Exception:
+            pass
+    return result
+
+
 def _iter_raw_project_files(proj):
     raw_dir = proj.raw_dir
     if not raw_dir.exists():
@@ -3137,6 +4701,50 @@ def api_raw_read(rel_path, project_slug=None):
     }
 
 
+def api_raw_upload(filename, file_data, folder=None, project_slug=None):
+    """Upload a file to raw/ directory.
+    filename: original filename (will be sanitized)
+    file_data: bytes
+    folder: optional subfolder in raw/
+    """
+    proj = _resolve_project(project_slug)
+    raw_root = proj.raw_dir.resolve()
+    # Sanitize filename: remove path components
+    import re
+    safe_name = Path(filename).name
+    # Replace dangerous characters but keep Unicode
+    safe_name = re.sub(r'[<>:"/\\|?*]', '_', safe_name)
+    if not safe_name:
+        safe_name = f"unnamed_{int(time.time())}"
+    # Build target path
+    target_dir = raw_root
+    if folder:
+        folder = folder.strip().lstrip("/")
+        if ".." in folder.split("/"):
+            return {"ok": False, "error": "invalid folder"}
+        target_dir = raw_root / folder
+    target_dir.mkdir(parents=True, exist_ok=True)
+    # Deduplicate filename if exists
+    target_path = dedupe_raw_path(target_dir / safe_name)
+    # Write file
+    try:
+        target_path.write_bytes(file_data)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    # Return relative path
+    try:
+        rel_path = target_path.relative_to(raw_root).as_posix()
+    except ValueError:
+        rel_path = target_path.name
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "path": rel_path,
+        "size": len(file_data),
+        "name": target_path.name,
+    }
+
+
 # ─── HTTP Handler ───
 
 class Handler(SimpleHTTPRequestHandler):
@@ -3185,6 +4793,170 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/query-stats":
                 proj = _resolve_project(q_project)
                 return self._json(_get_query_stats(query_log=proj.query_log))
+            if path == "/api/graph/build":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_build_api(proj))
+            if path == "/api/graph/stats":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_stats_api(proj))
+            if path == "/api/graph/god-nodes":
+                proj = _resolve_project(q_project)
+                top = int((qs.get("top_n", ["10"])[0] or "10"))
+                return self._json(_graph_god_nodes_api(proj, top))
+            if path == "/api/graph/community":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_community_api(proj))
+            if path == "/api/graph/shortest-path":
+                proj = _resolve_project(q_project)
+                src = (qs.get("source", [""])[0] or "").strip()
+                tgt = (qs.get("target", [""])[0] or "").strip()
+                return self._json(_graph_shortest_path_api(proj, src, tgt))
+            if path == "/api/graph/neighbors":
+                proj = _resolve_project(q_project)
+                nid = (qs.get("node", [""])[0] or "").strip()
+                return self._json(_graph_neighbors_api(proj, nid))
+            if path == "/api/graph/insights":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_insights_api(proj))
+            if path == "/api/graph/export":
+                proj = _resolve_project(q_project)
+                fmt = (qs.get("format", ["json"])[0] or "json").strip()
+                return self._json(_graph_export_api(proj, fmt))
+            if path == "/api/graph/composite":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_composite_api(proj))
+            if path == "/api/graph/rebuild":
+                proj = _resolve_project(q_project)
+                return self._json(_graph_rebuild_api(proj))
+            if path == "/api/graph/name-community":
+                proj = _resolve_project(q_project)
+                community_id = (qs.get("community_id", [""])[0] or "").strip()
+                name = (qs.get("name", [""])[0] or "").strip()
+                return self._json(_graph_name_community_api(proj, community_id, name))
+            if path == "/api/graph/get-community":
+                proj = _resolve_project(q_project)
+                community_id = (qs.get("community_id", [""])[0] or "").strip()
+                return self._json(_graph_get_community_api(proj, community_id))
+
+            # ─── knowledge universe APIs ───
+            if path == "/api/graph/universe":
+                return self._json(_build_universe_graph())
+
+            if path == "/api/graph/universe-config":
+                if self.command == "POST":
+                    try:
+                        length = int(self.headers.get("Content-Length", 0))
+                        body = self.rfile.read(length).decode("utf-8")
+                        config = json.loads(body)
+                        _save_universe_config(config)
+                    except Exception as e:
+                        return self._json({"ok": False, "error": str(e)})
+                return self._json(_load_universe_config())
+
+            if path == "/api/graph/join-universe":
+                slug = (qs.get("slug", [""])[0] or "").strip()
+                if not slug:
+                    return self._json({"ok": False, "error": "Missing slug"})
+                config = _load_universe_config()
+                excluded = config.get("excluded_projects", [])
+                if slug in excluded:
+                    excluded.remove(slug)
+                    config["excluded_projects"] = excluded
+                pending = config.get("pending_confirmation", [])
+                if slug in pending:
+                    pending.remove(slug)
+                    config["pending_confirmation"] = pending
+                # Mark as known so it won't show up in changes detection again
+                known = config.get("known_projects", [])
+                if slug not in known:
+                    known.append(slug)
+                    config["known_projects"] = known
+                # Calculate position
+                positions = config.get("galaxy_positions", {})
+                if slug not in positions:
+                    proj_count = len([
+                        p for p in project_registry.list_projects()
+                        if p.slug not in excluded
+                    ])
+                    import math
+                    angle = (proj_count - 1) * (2 * math.pi / max(proj_count, 7))
+                    positions[slug] = {
+                        "x": round(math.cos(angle) * 300, 1),
+                        "y": round(math.sin(angle) * 300, 1),
+                    }
+                    config["galaxy_positions"] = positions
+                _save_universe_config(config)
+                return self._json({"ok": True, "project": slug, "position": positions.get(slug, {"x": 0, "y": 0})})
+
+            if path == "/api/graph/leave-universe":
+                slug = (qs.get("slug", [""])[0] or "").strip()
+                if not slug:
+                    return self._json({"ok": False, "error": "Missing slug"})
+                config = _load_universe_config()
+                excluded = config.get("excluded_projects", [])
+                if slug not in excluded:
+                    excluded.append(slug)
+                    config["excluded_projects"] = excluded
+                    _save_universe_config(config)
+                return self._json({"ok": True, "project": slug})
+
+            if path == "/api/graph/universe-changes":
+                # Detect projects that may need confirmation
+                config = _load_universe_config()
+                excluded = set(config.get("excluded_projects", []))
+                pending = config.get("pending_confirmation", [])
+                known = set(config.get("known_projects", []))
+                all_slugs = {p.slug for p in project_registry.list_projects()}
+                # Only report projects NOT yet known (and not currently excluded/pending)
+                new_slugs = [s for s in (all_slugs - known) if s not in excluded and s not in pending]
+                pending_list = []
+                for slug in pending:
+                    for p in project_registry.list_projects():
+                        if p.slug == slug:
+                            pending_list.append({"slug": p.slug, "title": p.title})
+                return self._json({
+                    "ok": True,
+                    "new": new_slugs,
+                    "pending": pending_list,
+                })
+
+            if path == "/api/graph/universe-search":
+                query = (qs.get("query", [""])[0] or "").strip()
+                limit = int(qs.get("limit", ["20"])[0])
+                if not query:
+                    return self._json({"ok": False, "error": "Missing query"})
+                universe_data = _build_universe_graph()
+                nodes = universe_data["nodes"]
+                q_lower = query.lower()
+                results = []
+                for n in nodes:
+                    score = 0.0
+                    context = ""
+                    label_lower = n["label"].lower()
+                    if q_lower in label_lower:
+                        score = 1.0
+                        context = "标题匹配"
+                    elif any(q_lower in t.lower() for t in n.get("tags", [])):
+                        score = 0.7
+                        context = "标签匹配"
+                    if score > 0:
+                        results.append({"node": n, "score": score, "context": context})
+                results.sort(key=lambda x: -x["score"])
+                return self._json({
+                    "ok": True,
+                    "query": query,
+                    "results": results[:limit],
+                    "total_matches": len(results),
+                })
+
+            if path == "/api/graph/bridges":
+                min_sim = float(qs.get("min_similarity", ["0.3"])[0])
+                universe_data = _build_universe_graph()
+                bridges = universe_data.get("bridges", [])
+                filtered = [b for b in bridges if b.get("similarity", 0) >= min_sim]
+                filtered.sort(key=lambda x: -x["similarity"])
+                return self._json({"ok": True, "bridges": filtered, "count": len(filtered)})
+
             if path == "/api/index/status":
                 proj = _resolve_project(q_project)
                 return self._json(get_strategy(proj.wiki_dir))
@@ -3195,6 +4967,69 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/raw/read":
                 rp = (qs.get("path", [""])[0] or "").strip()
                 return self._json(api_raw_read(rp, q_project))
+            if path == "/api/raw/file":
+                rp = (qs.get("path", [""])[0] or "").strip()
+                try:
+                    proj = project_registry.get_project(q_project)
+                    raw_root = proj.raw_dir.resolve()
+                    rel = (rp or "").replace("\\", "/").strip().lstrip("/")
+                    if not rel or ".." in rel.split("/"):
+                        self._send_error(400, "invalid path")
+                        return
+                    full = (proj.raw_dir / rel).resolve()
+                    # Validate the path is within the raw directory
+                    try:
+                        full.relative_to(raw_root)
+                    except ValueError:
+                        self._send_error(403, "path escapes raw directory")
+                        return
+                    if not full.exists():
+                        self._send_error(404, "not found")
+                        return
+                    if not full.is_file():
+                        self._send_error(400, "not a file")
+                        return
+                    # Guess Content-Type based on extension
+                    ext = full.suffix.lower()
+                    content_types = {
+                        ".pdf": "application/pdf",
+                        ".png": "image/png",
+                        ".jpg": "image/jpeg",
+                        ".jpeg": "image/jpeg",
+                        ".gif": "image/gif",
+                        ".svg": "image/svg+xml",
+                        ".txt": "text/plain; charset=utf-8",
+                        ".md": "text/markdown; charset=utf-8",
+                        ".html": "text/html; charset=utf-8",
+                        ".htm": "text/html; charset=utf-8",
+                        ".css": "text/css; charset=utf-8",
+                        ".js": "application/javascript; charset=utf-8",
+                        ".json": "application/json; charset=utf-8",
+                    }
+                    content_type = content_types.get(ext, "application/octet-stream")
+                    # Read and send the file
+                    file_bytes = full.read_bytes()
+                    # Send response manually
+                    self.send_response(200)
+                    self.send_header("Content-Type", content_type)
+                    self.send_header("Content-Length", str(len(file_bytes)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    # Encode filename for RFC 5987 (UTF-8 support)
+                    encoded_filename = urllib.parse.quote(full.name, encoding='utf-8')
+                    self.send_header("Content-Disposition", f'inline; filename*=UTF-8\'\'{encoded_filename}')
+                    self.end_headers()
+                    try:
+                        self.wfile.write(file_bytes)
+                    except:
+                        pass
+                    return
+                except BrokenPipeError:
+                    pass
+                except Exception as e:
+                    import traceback
+                    print(f"[ERROR] serving raw file: {e}\n{traceback.format_exc()[:800]}")
+                    self._send_error(500, str(e))
+                return
             if path == "/api/claude/diagnose":
                 return self._json(diagnose_claude())
             if path == "/api/review/list":
@@ -3222,6 +5057,9 @@ class Handler(SimpleHTTPRequestHandler):
                     except Exception:
                         pass
                 return self._json({"last_date": last, "days_ago": days_ago})
+            if path == "/api/schedules":
+                schedules = SETTINGS.get("schedules", [])
+                return self._json({"ok": True, "schedules": schedules})
             # API 경로인데 매칭 안 됨
             if path.startswith("/api/"):
                 return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
@@ -3243,6 +5081,17 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         try:
+            # Check for file upload first
+            content_type = self.headers.get("Content-Type", "")
+            if path == "/api/raw/upload" and content_type.startswith("multipart/form-data"):
+                fields, files = self._parse_multipart()
+                p_slug = (fields.get("project") or "").strip() or None
+                folder = (fields.get("folder") or "").strip() or None
+                if "file" not in files:
+                    return self._json({"ok": False, "error": "no file provided"})
+                f = files["file"]
+                return self._json(api_raw_upload(f["filename"], f["data"], folder=folder, project_slug=p_slug))
+            # Regular JSON body for other endpoints
             body = self._read_body()
 
             # 전 엔드포인트에서 body.project 사용 (미지 slug면 get_project가 KeyError)
@@ -3263,6 +5112,14 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(do_lint(project_slug=p_slug))
             if path == "/api/lint/fix":
                 return self._json(do_lint_fix(project_slug=p_slug))
+            if path == "/api/links/validate":
+                return self._json(validate_links_api(project_slug=p_slug))
+            if path == "/api/links/fix-batch":
+                return self._json(fix_links_batch_api(
+                    project_slug=p_slug,
+                    auto_create=body.get("auto_create", False),
+                    alias_map=body.get("alias_map", {}),
+                ))
             if path == "/api/folder":
                 return self._json(create_folder(body.get("name", ""), body.get("parent", ""), project_slug=p_slug))
             if path == "/api/page":
@@ -3304,6 +5161,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return _handle_stream(self, stream_write(body.get("topic", ""), body.get("length", "medium"), body.get("style", "blog"), project_slug=p_slug))
             if path == "/api/compare/stream":
                 return _handle_stream(self, stream_compare(body.get("page_a", ""), body.get("page_b", ""), body.get("save_as", ""), project_slug=p_slug))
+            if path == "/api/loop/stream":
+                return _handle_stream(self, stream_loop(
+                    steps=body.get("steps"), include_ingest=body.get("include_ingest", False),
+                    reflect_window=body.get("reflect_window", "last-10-ingests"),
+                    project_slug=p_slug, continue_on_error=body.get("continue_on_error", False),
+                ))
             if path == "/api/slides":
                 return self._json(do_slides(body.get("page", ""), project_slug=p_slug))
             if path == "/api/search":
@@ -3317,6 +5180,7 @@ class Handler(SimpleHTTPRequestHandler):
                     body.get("question", ""),
                     body.get("lang", "en"),
                     body.get("history", []),
+                    body.get("project", None),
                 ))
             if path == "/api/settings":
                 _AI_KEYS = (
@@ -3354,7 +5218,7 @@ class Handler(SimpleHTTPRequestHandler):
                 except ValueError as e:
                     return self._json({"ok": False, "error": str(e)})
             if path == "/api/ai/test":
-                return self._json(api_ai_test_connection())
+                return self._json(api_ai_test())
             if path == "/api/cli/test":
                 return self._json(api_cli_test())
             if path == "/api/index/rebuild":
@@ -3364,6 +5228,71 @@ class Handler(SimpleHTTPRequestHandler):
                     git_mgr._stage_all(project=proj)
                     git_mgr._run("commit", "-m", f"index{git_mgr._slug_prefix(proj)}: rebuild ({result['mode']})")
                 return self._json(result)
+
+            # ─── Wiki Loop ───────────────────────────────────────────────
+            if path == "/api/loop/run":
+                return self._json(wiki_ops.run_loop(
+                    project=p_slug,
+                    steps=body.get("steps", ["lint", "lint_fix", "reflect"]),
+                    include_ingest=body.get("include_ingest", False),
+                    reflect_window=body.get("reflect_window", "last-10-ingests"),
+                    continue_on_error=body.get("continue_on_error", False),
+                ))
+
+            # ─── Schedules ───────────────────────────────────────────────
+            if path == "/api/schedules":
+                # POST: create or update
+                sched = body
+                if not sched.get("id"):
+                    import hashlib
+                    sched["id"] = hashlib.md5(sched.get("name", "").encode()).hexdigest()[:8]
+                schedules = SETTINGS.get("schedules", [])
+                # Update if exists
+                updated = False
+                for i, s in enumerate(schedules):
+                    if s.get("id") == sched["id"]:
+                        schedules[i] = sched
+                        updated = True
+                        break
+                if not updated:
+                    schedules.append(sched)
+                SETTINGS["schedules"] = schedules
+                _save_settings(SETTINGS)
+                return self._json({"ok": True, "schedule": sched})
+
+            if path.startswith("/api/schedules/") and self.command == "DELETE":
+                sched_id = path.split("/api/schedules/")[-1].split("/")[0]
+                schedules = SETTINGS.get("schedules", [])
+                SETTINGS["schedules"] = [s for s in schedules if s.get("id") != sched_id]
+                _save_settings(SETTINGS)
+                return self._json({"ok": True})
+
+            if path.startswith("/api/schedules/") and path.endswith("/run"):
+                parts = path.split("/")
+                sched_id = parts[-2]
+                schedules = SETTINGS.get("schedules", [])
+                sched = next((s for s in schedules if s.get("id") == sched_id), None)
+                if not sched:
+                    return self._json({"ok": False, "error": "schedule not found"}, code=404)
+                return self._json(wiki_ops.run_loop(
+                    project=sched.get("project", p_slug),
+                    steps=sched.get("steps", ["lint"]),
+                    include_ingest=sched.get("include_ingest", False),
+                    reflect_window=sched.get("reflect_window", "last-10-ingests"),
+                ))
+
+            if path.startswith("/api/schedules/") and path.endswith("/toggle"):
+                parts = path.split("/")
+                sched_id = parts[-2]
+                schedules = SETTINGS.get("schedules", [])
+                for s in schedules:
+                    if s.get("id") == sched_id:
+                        s["enabled"] = not s.get("enabled", False)
+                        break
+                SETTINGS["schedules"] = schedules
+                _save_settings(SETTINGS)
+                return self._json({"ok": True})
+
             if path == "/api/projects/create":
                 return self._json(create_project_api(
                     body.get("slug", ""),
@@ -3386,6 +5315,17 @@ class Handler(SimpleHTTPRequestHandler):
                     body.get("slug", ""),
                     bool(body.get("confirm", False)),
                 ))
+            # ─── Knowledge Universe config (POST) ──────────────────────
+            if path == "/api/graph/universe-config":
+                try:
+                    existing = _load_universe_config()
+                    # Merge: only update keys provided in request body
+                    for k, v in body.items():
+                        existing[k] = v
+                    _save_universe_config(existing)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)})
+                return self._json(_load_universe_config())
             # 매칭 안 된 API 경로
             return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
         except BrokenPipeError:
@@ -3394,6 +5334,32 @@ class Handler(SimpleHTTPRequestHandler):
             import traceback
             err_msg = f"{type(e).__name__}: {e}"
             print(f"[ERROR] POST {path}: {err_msg}\n{traceback.format_exc()[:1000]}")
+            try:
+                self._json({"ok": False, "error": err_msg, "endpoint": path}, code=500)
+            except Exception:
+                pass
+
+    def do_DELETE(self):
+        """Handle DELETE requests by delegating to do_POST logic."""
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        try:
+            body = {}
+            # Reuse POST routing for DELETE (schedules, etc.)
+            # ─── Schedules DELETE ──────────────────────────────────────
+            if path.startswith("/api/schedules/"):
+                sched_id = path.split("/api/schedules/")[-1].split("/")[0]
+                schedules = SETTINGS.get("schedules", [])
+                SETTINGS["schedules"] = [s for s in schedules if s.get("id") != sched_id]
+                _save_settings(SETTINGS)
+                return self._json({"ok": True})
+            return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            import traceback
+            err_msg = f"{type(e).__name__}: {e}"
+            print(f"[ERROR] DELETE {path}: {err_msg}\n{traceback.format_exc()[:1000]}")
             try:
                 self._json({"ok": False, "error": err_msg, "endpoint": path}, code=500)
             except Exception:
@@ -3430,6 +5396,49 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
         except BrokenPipeError:
             pass
+
+    def _send_error(self, code, message):
+        """Send a simple plain text error response."""
+        try:
+            body = message.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", len(body))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
+
+    def _parse_multipart(self):
+        """Parse multipart/form-data, returns (fields dict, files dict).
+        files: {name: {filename, content_type, data}}
+        """
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.startswith("multipart/form-data"):
+            return {}, {}
+        # Parse boundary
+        import cgi
+        environ = {
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": content_type,
+            "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+        }
+        fs = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ=environ)
+        fields = {}
+        files = {}
+        for key in fs.keys():
+            item = fs[key]
+            if item.filename:
+                files[key] = {
+                    "filename": item.filename,
+                    "content_type": item.headers.get("Content-Type", "application/octet-stream"),
+                    "data": item.file.read() if item.file else b"",
+                }
+            else:
+                fields[key] = item.value if item.value else ""
+        return fields, files
+
 
     def _sse_start(self):
         """Send SSE response headers."""
@@ -3470,7 +5479,22 @@ class DualStackHTTPServer(HTTPServer):
         super().server_bind()
 
 if __name__ == "__main__":
+    from scheduler import WikiScheduler
+
     print(f"LLM Wiki Dashboard → http://localhost:{PORT}")
     print(f"Project: {PROJECT_ROOT}")
     print(f"Wiki:    {WIKI_DIR} ({sum(1 for _ in WIKI_DIR.rglob('*.md'))} pages)")
-    DualStackHTTPServer(("::", PORT), Handler).serve_forever()
+
+    scheduler = WikiScheduler(SETTINGS_FILE)
+    scheduler.start()
+    print("Scheduler started (checking every 60s)")
+
+    server = DualStackHTTPServer(("::", PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        scheduler.stop()
+        server.server_close()
+        print("Done.")

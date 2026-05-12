@@ -76,6 +76,8 @@ If `projects.json` is missing or empty, the server runs in legacy mode — treat
 
 ## Quick start
 
+### Local development (no Docker)
+
 ```bash
 git clone https://github.com/cmblir/memex.git
 cd memex
@@ -93,6 +95,148 @@ Open `http://localhost:8090`. Done.
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — `npm install -g @anthropic-ai/claude-code`
 - A browser
 - Obsidian — *optional* but pre-configured. The repo ships as a ready Obsidian vault.
+
+</details>
+
+### Docker deployment
+
+Three services — **dashboard** (REST API + web UI), **mcp** (MCP server for Claude Code/Desktop), **nginx** (reverse proxy).
+
+```bash
+./deploy.sh deploy          # one-click: install + build + start
+```
+
+| Command | Description |
+|---------|-------------|
+| `./deploy.sh deploy` | Full pipeline: environment init + build all images + start + health checks |
+| `./deploy.sh install` | Init environment (creates `.env` from `.env.example`) |
+| `./deploy.sh build` | Build all images (dashboard + mcp + nginx) |
+| `./deploy.sh start` | Start all services and wait for health checks |
+| `./deploy.sh stop` | Stop all containers |
+| `./deploy.sh restart` | Restart all containers |
+| `./deploy.sh status` | Show container status, resource usage, ports |
+| `./deploy.sh logs` | View logs (`-f` for streaming, `--service memex-mcp` for MCP only) |
+| `./deploy.sh prune` | Clean orphaned containers and dangling images |
+| `./deploy.sh destroy` | **Danger**: remove all containers, images, and volumes |
+
+**Configuration** (`.env`):
+
+```bash
+MEMEX_PORT=8000              # External port (nginx maps to container port 80)
+MEMEX_VERSION=0.1.0          # Docker image tag
+MEMEX_TZ=Asia/Shanghai       # Container timezone
+MEMEX_ACTIVE_PROJECT=        # Active project slug (empty = legacy mode)
+MEMEX_WIKI_DIR=./wiki        # Wiki data mount path
+MEMEX_RAW_DIR=./raw          # Raw sources mount path (read-only)
+MEMEX_PROJECTS_DIR=./projects # Multi-project mount path
+MEMEX_GIT_DIR=./.git         # Git repo mount path
+MEMEX_MCP_TRANSPORT=stdio    # MCP transport: "stdio" (local) or "http" (remote)
+```
+
+After deployment, access:
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Dashboard | `http://localhost:8000` | Web UI + REST API |
+| Health check | `http://localhost:8000/health` | Service health status |
+| MCP server | stdio (default) or HTTP | See MCP access options below |
+
+### Remote MCP access (server deployment)
+
+Three one-click deployment scripts are provided in `scripts/`:
+
+**Option 1: SSH stdio tunnel** — zero config, no open ports
+
+```bash
+bash scripts/deploy-ssh-stdio.sh user@your-server.com
+```
+
+Claude Code opens an SSH connection, runs `docker exec` into the MCP container, and communicates over stdio. Best for quick personal access.
+
+**Option 2: HTTP via nginx** — production deployment, recommended
+
+```bash
+bash scripts/deploy-http-nginx.sh user@your-server.com   # remote
+bash scripts/deploy-http-nginx.sh                        # local
+```
+
+MCP is proxied through nginx at `http://<host>:8000/mcp`. All traffic goes through port 80. Works with Claude Code and Claude Desktop.
+
+**Option 3: Direct HTTP** — internal network
+
+```bash
+bash scripts/deploy-direct-http.sh user@your-server.com   # remote
+bash scripts/deploy-direct-http.sh                        # local
+```
+
+MCP listens directly on port 8081. Requires firewall rule but no nginx config. Best for LAN-only access.
+
+<details>
+<summary><strong>Manual setup (without scripts)</strong></summary>
+
+**SSH stdio:**
+```bash
+claude mcp add memex -- ssh user@your-server.com \
+  "docker exec -i memex-mcp python3 /home/appuser/mcp-server/memex_mcp.py"
+```
+
+**HTTP via nginx:**
+```bash
+echo 'MEMEX_MCP_TRANSPORT=http' >> .env
+./deploy.sh restart
+# MCP available at http://<host>:8000/mcp
+claude mcp add memex -- npx @anthropic-ai/mcp-remote --url http://<host>:8000/mcp
+```
+
+**Direct HTTP:**
+```bash
+echo 'MEMEX_MCP_TRANSPORT=http' >> .env
+# Also expose port 8081 in docker-compose.yml
+./deploy.sh restart
+claude mcp add memex -- npx @anthropic-ai/mcp-remote --url http://<host>:8081/
+```
+
+</details>
+
+<details>
+<summary><strong>Which option should I choose?</strong></summary>
+
+| Criteria | SSH stdio | HTTP via nginx | Direct HTTP |
+|----------|-----------|----------------|-------------|
+| Setup complexity | None | Low | Medium |
+| Security | SSH key auth | Behind nginx | Open port required |
+| Works with Claude Code | Yes | Yes | Yes |
+| Works with Claude Desktop | No | Yes | Yes |
+| Works with web Claude | No | Yes (with SSE) | Yes |
+| Requires open ports | No (uses SSH) | Port 80 only | Port 8081 |
+</details>
+
+<details>
+<summary><strong>Building individual services</strong></summary>
+
+```bash
+./deploy.sh build --only-dashboard   # Only dashboard
+./deploy.sh build --only-mcp         # Only MCP server
+```
+
+</details>
+
+<details>
+<summary><strong>Docker Compose architecture</strong></summary>
+
+```
+nginx (:8000 → :80)
+  │
+  ├── memex-dashboard (:8000 internal)
+  │     ├── volumes: wiki/, raw/, projects/, .git/, .dashboard-settings.json
+  │     └── health: HTTP check on port 8000
+  │
+  └── memex-mcp (stdio mode)
+        ├── volumes: wiki/, raw/, projects/, .git/, .dashboard-settings.json
+        └── health: always returns 0 (stdio exits cleanly without stdin)
+```
+
+All services share the `memex-net` bridge network. Dashboard and MCP share the same `wiki/`, `raw/`, and `projects/` mounts, so changes from either surface are immediately visible.
 
 </details>
 
