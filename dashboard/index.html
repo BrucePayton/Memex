@@ -3699,6 +3699,8 @@ var _univHov=null, _univDrag=null, _univMoved=false;
 var _univW=0, _univH=0, _univMaxDeg=1;
 var _univBridgeSet={};
 var _univChangeCheck=null, _univNewProjects=[], _univPendingSlugs=new Set();
+// Path finding state
+var _univPathMode=false, _univPathA=null, _univPathB=null, _univPathNodeSet=null, _univPathEdgeSet=null;
 
 var GALAXY_COLORS=[
   '#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F',
@@ -3728,10 +3730,23 @@ function _univSigmoid(x){
 
 function _univUpdateLabelAlphas(){
   _univNs.forEach(function(n){
-    if(UNIVERSE_HIDDEN_PROJECTS.has(n.project)){n.labelAlpha=0;return;}
+    if(UNIVERSE_HIDDEN_PROJECTS.has(n.project)){n.labelTargetAlpha=0;return;}
     var deg=universeDegreeMap[n.id]||1;
     var ratio=deg/_univMaxDeg;
-    n.labelAlpha=_univSigmoid((_univScale-0.5)*3)*_univSigmoid((ratio-0.05)*15);
+    n.labelTargetAlpha=_univSigmoid((_univScale-0.5)*3)*_univSigmoid((ratio-0.05)*15);
+  });
+}
+
+function _univLerpLabelAlphas(){
+  var speed=0.08;
+  _univNs.forEach(function(n){
+    var t=n.labelTargetAlpha||0;
+    var d=t-n.labelAlpha;
+    if(Math.abs(d)>0.001){
+      n.labelAlpha+=d*speed;
+    }else{
+      n.labelAlpha=t;
+    }
   });
 }
 
@@ -3775,8 +3790,13 @@ async function showUniverse(){
           '<div id="univStats" style="font-size:11px;color:var(--muted);"></div>'+
         '</div>'+
         '<div style="padding:12px;border-bottom:1px solid var(--border);">'+
-          '<input id="univSearch" type="text" placeholder="Search nodes..." autocomplete="off" '+
-            'style="width:100%;background:var(--bg);border:1px solid var(--border2);color:var(--text2);padding:7px 10px;border-radius:6px;font-size:13px;outline:none;">'+
+          '<div style="display:flex;gap:6px;">'+
+            '<input id="univSearch" type="text" placeholder="Search nodes..." autocomplete="off" '+
+              'style="flex:1;background:var(--bg);border:1px solid var(--border2);color:var(--text2);padding:7px 10px;border-radius:6px;font-size:13px;outline:none;">'+
+            '<button id="univPathBtn" onclick="univTogglePathMode()" title="Shortest path" '+
+              'style="padding:7px 10px;background:var(--bg);border:1px solid var(--border2);color:var(--muted);border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;">Path</button>'+
+          '</div>'+
+          '<div id="univPathHint" style="font-size:11px;color:var(--muted);margin-top:4px;display:none;">Click two nodes to find shortest path</div>'+
           '<div id="univSearchResults" style="max-height:120px;overflow-y:auto;display:none;"></div>'+
         '</div>'+
         '<div id="univInfoPanel" style="padding:14px;border-bottom:1px solid var(--border);min-height:80px;">'+
@@ -3877,11 +3897,13 @@ function buildUniverseVis(){
     return {
       id:n.id, label:n.label, project:n.project, project_title:n.project_title||n.project,
       type:n.type, filename:n.filename, tags:n.tags||[],
+      status:n.status||'active', confidence:n.confidence||'',
       x:_univW/2+(Math.random()-.5)*500, y:_univH/2+(Math.random()-.5)*500,
       vx:0, vy:0,
       r:5+12*(deg/_univMaxDeg),
       color:color,
       labelAlpha:0,
+      labelTargetAlpha:0,
     };
   });
   _univNm={}; _univNs.forEach(function(n){_univNm[n.id]=n;});
@@ -3963,8 +3985,38 @@ function buildUniverseVis(){
     var rect=cv.getBoundingClientRect();
     var n=_univHit(e.clientX-rect.left, e.clientY-rect.top);
     if(!n){
-      var ic=document.getElementById('univInfoContent');
-      if(ic) ic.innerHTML='<span style="font-style:italic;">Hover or click a node</span>';
+      if(!_univPathMode){
+        var ic=document.getElementById('univInfoContent');
+        if(ic) ic.innerHTML='<span style="font-style:italic;">Hover or click a node</span>';
+      }
+      return;
+    }
+    // Path mode: select two nodes
+    if(_univPathMode){
+      if(!_univPathA){
+        _univPathA=n.id;
+        var hint=document.getElementById('univPathHint');
+        if(hint) hint.textContent='Selected: '+n.label+' — now click target node';
+        showUniverseNodeInfo(n.id);
+      }else if(!_univPathB&&n.id!==_univPathA){
+        _univPathB=n.id;
+        _univFindPath();
+        showUniverseNodeInfo(n.id);
+      }else if(n.id===_univPathA){
+        // Click same node to deselect
+        _univClearPath();
+        var hint2=document.getElementById('univPathHint');
+        if(hint2) hint2.textContent='Click two nodes to find shortest path';
+        var ic2=document.getElementById('univInfoContent');
+        if(ic2) ic2.innerHTML='<span style="font-style:italic;">Hover or click a node</span>';
+      }else{
+        // Replace source with new node
+        _univPathA=n.id; _univPathB=null;
+        _univPathNodeSet=null; _univPathEdgeSet=null;
+        var hint3=document.getElementById('univPathHint');
+        if(hint3) hint3.textContent='Selected: '+n.label+' — now click target node';
+        showUniverseNodeInfo(n.id);
+      }
       return;
     }
     showUniverseNodeInfo(n.id);
@@ -4028,6 +4080,9 @@ function buildUniverseVis(){
   });
   ro.observe(container);
 
+  // Initialize label alphas for current zoom
+  _univUpdateLabelAlphas();
+
   // Start render loop
   _univTick();
 }
@@ -4079,11 +4134,20 @@ function showUniverseNodeInfo(nodeId){
     neighborHtml+='</div>';
   }
 
+  var statusBadge='';
+  if(n.status==='superseded') statusBadge=' <span style="font-size:10px;color:#9ca3af;">(superseded)</span>';
+  else if(n.status==='disputed') statusBadge=' <span style="font-size:10px;color:#f87171;">(disputed)</span>';
+  var confBadge='';
+  if(n.confidence==='low') confBadge=' <span style="font-size:10px;color:#f59e0b;">(low confidence)</span>';
+  else if(n.confidence==='high') confBadge=' <span style="font-size:10px;color:#34d399;">(high confidence)</span>';
+
   var ic=document.getElementById('univInfoContent');
   if(ic){
     ic.innerHTML=
-      '<div style="margin-bottom:5px;"><b style="color:var(--text);font-size:13px;">'+esc(n.label)+'</b></div>'+
+      '<div style="margin-bottom:5px;"><b style="color:var(--text);font-size:13px;">'+esc(n.label)+'</b>'+statusBadge+confBadge+'</div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Type: <span style="color:var(--text2);">'+esc(n.type||'unknown')+'</span></div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Status: <span style="color:var(--text2);">'+esc(n.status||'active')+'</span></div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Confidence: <span style="color:var(--text2);">'+esc(n.confidence||'—')+'</span></div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Project: <span style="color:var(--text2);">'+esc(n.project_title||n.project)+'</span></div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Degree: <span style="color:var(--text2);">'+(universeDegreeMap[n.id]||0)+'</span></div>'+
       tagsHtml+neighborHtml;
@@ -4135,7 +4199,54 @@ function resetUniverseView(){
   _univUpdateLabelAlphas();
   var se=document.getElementById('univSearch');
   if(se)se.value='';
+  _univClearPath();
   renderUniverseLegend();
+}
+
+// ─── Universe path finding ───
+
+function univTogglePathMode(){
+  _univPathMode=!_univPathMode;
+  var btn=document.getElementById('univPathBtn');
+  var hint=document.getElementById('univPathHint');
+  if(btn) btn.style.background=_univPathMode?'rgba(122,162,247,0.2)':'';
+  if(hint) hint.style.display=_univPathMode?'block':'none';
+  if(!_univPathMode) _univClearPath();
+}
+
+function _univClearPath(){
+  _univPathA=null; _univPathB=null;
+  _univPathNodeSet=null; _univPathEdgeSet=null;
+}
+
+async function _univFindPath(){
+  if(!_univPathA||!_univPathB)return;
+  var srcNode=_univNm[_univPathA];
+  var tgtNode=_univNm[_univPathB];
+  if(!srcNode||!tgtNode)return;
+
+  var hint=document.getElementById('univPathHint');
+  if(hint) hint.textContent='Finding path...';
+
+  try{
+    var params='?source='+encodeURIComponent(srcNode.label)+'&target='+encodeURIComponent(tgtNode.label);
+    var resp=await fetch('/api/graph/universe-shortest-path'+params);
+    var data=await resp.json();
+
+    if(data.ok){
+      _univPathNodeSet=new Set(data.path);
+      _univPathEdgeSet=new Set(data.edges.map(function(e){
+        return [e.source,e.target].sort().join('|||');
+      }));
+      if(hint) hint.textContent='Path found: '+data.hops+' hops';
+    }else{
+      _univPathNodeSet=null; _univPathEdgeSet=null;
+      if(hint) hint.textContent='No path found: '+data.error;
+    }
+  }catch(e){
+    _univPathNodeSet=null; _univPathEdgeSet=null;
+    if(hint) hint.textContent='Error: '+e.message;
+  }
 }
 
 function focusUniverseProject(slug){
@@ -4181,6 +4292,9 @@ function _univTick(){
     n.x+=n.vx;n.y+=n.vy;
   }
 
+  // Smooth label alpha transition
+  _univLerpLabelAlphas();
+
   // Render
   ctx.clearRect(0,0,W*dpr,H*dpr);
   ctx.save();
@@ -4192,11 +4306,12 @@ function _univTick(){
     var e=_univEs[ei];
     if(UNIVERSE_HIDDEN_PROJECTS.has(e.s.project)||UNIVERSE_HIDDEN_PROJECTS.has(e.t.project))continue;
     var hi=_univHov&&(e.s.id===_univHov.id||e.t.id===_univHov.id);
-    ctx.strokeStyle=e.isBridge?(hi?'#888':'#666'):(hi?'#58a6ff88':'#333');
-    ctx.lineWidth=e.isBridge?1.5:0.8;
-    if(!e.isBridge)ctx.setLineDash([4,4]);
-    else ctx.setLineDash([]);
-    ctx.globalAlpha=e.isBridge?0.5:0.2;
+    var onPath=_univPathEdgeSet&&_univPathEdgeSet.has([e.s.id,e.t.id].sort().join('|||'));
+    var edgeAlpha=e.isBridge?0.55:0.35;
+    if(onPath){edgeAlpha=1;ctx.strokeStyle='#fbbf24';ctx.lineWidth=2.5;}
+    else{ctx.strokeStyle=e.isBridge?(hi?'#a0a8b0':'#787f88'):(hi?'#7aa2f7':'#4a5568');ctx.lineWidth=e.isBridge?1.8:1.2;}
+    ctx.setLineDash([]);
+    ctx.globalAlpha=edgeAlpha;
     ctx.beginPath();
     ctx.moveTo(e.s.x,e.s.y);
     ctx.lineTo(e.t.x,e.t.y);
@@ -4212,18 +4327,61 @@ function _univTick(){
     var n=_univNs[i];
     if(UNIVERSE_HIDDEN_PROJECTS.has(n.project))continue;
     var hi=_univHov&&_univHov.id===n.id;
-    ctx.globalAlpha=1;
+    var onPath=_univPathNodeSet&&_univPathNodeSet.has(n.id);
+    var status=n.status||'active';
+    var confidence=n.confidence||'';
+
+    // Base alpha based on confidence
+    var baseAlpha=1;
+    if(confidence==='low') baseAlpha=0.65;
+    else if(confidence==='medium') baseAlpha=0.85;
+
+    ctx.globalAlpha=baseAlpha;
+
+    // Superseded: draw with dashed ring
+    if(status==='superseded'){
+      ctx.globalAlpha=baseAlpha*0.6;
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,n.r+3,0,Math.PI*2);
+      ctx.strokeStyle='#9ca3af';
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([3,3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Disputed: red dashed ring
+    if(status==='disputed'){
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,n.r+4,0,Math.PI*2);
+      ctx.strokeStyle='#f87171';
+      ctx.lineWidth=2;
+      ctx.setLineDash([4,3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.globalAlpha=baseAlpha;
     ctx.beginPath();
     ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-    ctx.fillStyle=hi?'#ffffff':n.color;
+    ctx.fillStyle=onPath?'#fbbf24':(hi?'#ffffff':n.color);
     ctx.fill();
-    if(hi){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();}
+
+    if(onPath){
+      ctx.strokeStyle='#fbbf24';
+      ctx.lineWidth=2.5;
+      ctx.stroke();
+    }else if(hi){
+      ctx.strokeStyle='#fff';
+      ctx.lineWidth=2;
+      ctx.stroke();
+    }
 
     // Label with sigmoid alpha
     if(n.labelAlpha>0.05){
-      ctx.globalAlpha=Math.min(1,n.labelAlpha);
-      ctx.fillStyle='#ffffff';
-      ctx.font='11px -apple-system,sans-serif';
+      ctx.globalAlpha=Math.min(1,n.labelAlpha)*(onPath?1:baseAlpha);
+      ctx.fillStyle=onPath?'#fbbf24':'#ffffff';
+      ctx.font=(onPath?'bold ':'')+'11px -apple-system,sans-serif';
       ctx.textAlign='center';
       ctx.fillText(n.label,n.x,n.y+n.r+14);
       ctx.globalAlpha=1;

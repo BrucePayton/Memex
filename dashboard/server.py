@@ -1567,6 +1567,8 @@ def build_wiki_data(project_slug=None, ui_lang=None):
             "type": pt, "created": meta.get("created", ""), "updated": meta.get("updated", ""),
             "tags": meta.get("tags", []), "sources": meta.get("sources", []),
             "links": links, "word_count": len(body.split()), "content": body.strip(),
+            "status": meta.get("status", "active"),
+            "confidence": meta.get("confidence", ""),
         })
         node_ids.add(filename)
         nodes.append({"id": filename, "label": disp_title, "type": pt})
@@ -1954,6 +1956,71 @@ def _graph_shortest_path_api(proj, source, target):
         cur = visited[cur]
     path.reverse()
     path_edges = [{"from": path[i], "to": path[i + 1]} for i in range(len(path) - 1)]
+    return {"ok": True, "path": path, "hops": len(path) - 1, "edges": path_edges}
+
+
+def _universe_shortest_path_api(source, target):
+    """BFS shortest path on the full universe graph (cross-project)."""
+    from collections import deque
+    universe_data = _build_universe_graph()
+    nodes = universe_data["nodes"]
+    edges = universe_data["edges"]
+    bridges = universe_data.get("bridges", [])
+
+    # Build node lookup: prefixed ID → node
+    node_lookup = {}
+    for n in nodes:
+        nid = n["id"]
+        node_lookup[nid.lower()] = nid
+        node_lookup[n["label"].lower()] = nid
+        # Also match by filename without project prefix
+        node_lookup[n.get("filename", "").lower()] = nid
+
+    src_id = node_lookup.get(source.lower())
+    tgt_id = node_lookup.get(target.lower())
+    if not src_id:
+        return {"ok": False, "error": f"source node not found: {source}"}
+    if not tgt_id:
+        return {"ok": False, "error": f"target node not found: {target}"}
+    if src_id == tgt_id:
+        return {"ok": True, "path": [src_id], "hops": 0, "edges": []}
+
+    # Build adjacency list from project edges + bridge edges
+    adj = {n["id"]: [] for n in nodes}
+    for e in edges:
+        s, t = e["source"], e["target"]
+        if s in adj and t in adj:
+            adj[s].append(t)
+            adj[t].append(s)
+    for b in bridges:
+        s, t = b.get("from_node", ""), b.get("to_node", "")
+        if s and t and s in adj and t in adj:
+            adj[s].append(t)
+            adj[t].append(s)
+
+    # BFS
+    visited = {src_id: None}
+    queue = deque([src_id])
+    while queue:
+        u = queue.popleft()
+        if u == tgt_id:
+            break
+        for v in adj[u]:
+            if v not in visited:
+                visited[v] = u
+                queue.append(v)
+
+    if tgt_id not in visited:
+        return {"ok": False, "error": f"no path between '{source}' and '{target}'"}
+
+    path = []
+    cur = tgt_id
+    while cur is not None:
+        path.append(cur)
+        cur = visited[cur]
+    path.reverse()
+
+    path_edges = [{"source": path[i], "target": path[i + 1]} for i in range(len(path) - 1)]
     return {"ok": True, "path": path, "hops": len(path) - 1, "edges": path_edges}
 
 
@@ -2374,6 +2441,8 @@ def _universe_project_nodes(proj):
             "tags": n.get("tags", []),
             "project": proj.slug,
             "project_title": proj.title,
+            "status": n.get("status", "active"),
+            "confidence": n.get("confidence", ""),
         })
 
     for e in edges:
@@ -4948,6 +5017,13 @@ class Handler(SimpleHTTPRequestHandler):
                     "results": results[:limit],
                     "total_matches": len(results),
                 })
+
+            if path == "/api/graph/universe-shortest-path":
+                src = (qs.get("source", [""])[0] or "").strip()
+                tgt = (qs.get("target", [""])[0] or "").strip()
+                if not src or not tgt:
+                    return self._json({"ok": False, "error": "Missing source or target"})
+                return self._json(_universe_shortest_path_api(src, tgt))
 
             if path == "/api/graph/bridges":
                 min_sim = float(qs.get("min_similarity", ["0.3"])[0])
