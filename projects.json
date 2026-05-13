@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "askdata-platform",
+  "active": "fengkong-shouce",
   "projects": [
     {
       "slug": "个人文档中心",
@@ -46,6 +46,15 @@
       "created": "2026-05-04",
       "last_used": "2026-05-09",
       "template": "llm-research"
+    },
+    {
+      "slug": "fengkong-shouce",
+      "title": "风控手册",
+      "description": "平安产险各机构杂费付款审批、金科服务手册、支付指引等风控合规文档的知识管理",
+      "model": "default",
+      "created": "2026-05-13",
+      "last_used": "2026-05-13",
+      "template": ""
     }
   ]
 }
