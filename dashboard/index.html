@@ -3701,6 +3701,8 @@ var _univBridgeSet={};
 var _univChangeCheck=null, _univNewProjects=[], _univPendingSlugs=new Set();
 // Path finding state
 var _univPathMode=false, _univPathA=null, _univPathB=null, _univPathNodeSet=null, _univPathEdgeSet=null;
+// Selected node state
+var _univSelected=null;
 
 var GALAXY_COLORS=[
   '#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F',
@@ -3989,6 +3991,7 @@ function buildUniverseVis(){
     var n=_univHit(e.clientX-rect.left, e.clientY-rect.top);
     if(!n){
       if(!_univPathMode){
+        _univSelected=null;
         var ic=document.getElementById('univInfoContent');
         if(ic) ic.innerHTML='<span style="font-style:italic;">Hover or click a node</span>';
       }
@@ -4022,7 +4025,15 @@ function buildUniverseVis(){
       }
       return;
     }
-    showUniverseNodeInfo(n.id);
+    // Normal mode: toggle selection
+    if(_univSelected&&_univSelected.id===n.id){
+      _univSelected=null;
+      var ic=document.getElementById('univInfoContent');
+      if(ic) ic.innerHTML='<span style="font-style:italic;">Hover or click a node</span>';
+    }else{
+      _univSelected=n;
+      showUniverseNodeInfo(n.id);
+    }
   });
 
   cv.addEventListener('dblclick',function(e){
@@ -4200,6 +4211,7 @@ function resetUniverseView(){
   _univScale=1; _univOffsetX=0; _univOffsetY=0;
   UNIVERSE_HIDDEN_PROJECTS.clear();
   _univUpdateLabelAlphas();
+  _univSelected=null;
   var se=document.getElementById('univSearch');
   if(se)se.value='';
   _univClearPath();
@@ -4364,13 +4376,29 @@ function _univTick(){
       ctx.setLineDash([]);
     }
 
+    // Selected: pulsing glow ring
+    var isSelected=_univSelected&&_univSelected.id===n.id;
+    if(isSelected){
+      var pulse=0.5+0.5*Math.sin(Date.now()/300);
+      var glowR=n.r+5+pulse*6;
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,glowR,0,Math.PI*2);
+      ctx.strokeStyle='rgba(251,191,36,'+(0.4+pulse*0.4)+')';
+      ctx.lineWidth=2.5;
+      ctx.stroke();
+    }
+
     ctx.globalAlpha=baseAlpha;
     ctx.beginPath();
     ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-    ctx.fillStyle=onPath?'#fbbf24':(hi?'#ffffff':n.color);
+    ctx.fillStyle=(onPath||isSelected)?'#fbbf24':(hi?'#ffffff':n.color);
     ctx.fill();
 
     if(onPath){
+      ctx.strokeStyle='#fbbf24';
+      ctx.lineWidth=2.5;
+      ctx.stroke();
+    }else if(isSelected){
       ctx.strokeStyle='#fbbf24';
       ctx.lineWidth=2.5;
       ctx.stroke();
@@ -4382,9 +4410,9 @@ function _univTick(){
 
     // Label with sigmoid alpha
     if(n.labelAlpha>0.05){
-      ctx.globalAlpha=Math.min(1,n.labelAlpha)*(onPath?1:baseAlpha);
-      ctx.fillStyle=onPath?'#fbbf24':'#ffffff';
-      ctx.font=(onPath?'bold ':'')+'11px -apple-system,sans-serif';
+      ctx.globalAlpha=Math.min(1,n.labelAlpha)*(onPath||isSelected?1:baseAlpha);
+      ctx.fillStyle=(onPath||isSelected)?'#fbbf24':'#ffffff';
+      ctx.font=(onPath||isSelected?'bold ':'')+'11px -apple-system,sans-serif';
       ctx.textAlign='center';
       ctx.fillText(n.label,n.x,n.y+n.r+14);
       ctx.globalAlpha=1;
