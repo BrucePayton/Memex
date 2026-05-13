@@ -3892,15 +3892,18 @@ function buildUniverseVis(){
   // Build node objects
   _univNs=UNIVERSE_DATA.nodes.map(function(n){
     var deg=universeDegreeMap[n.id]||1;
+    var isSystem=n.project==='system';
     var ci=projIdx[n.project]||0;
-    var color=getGalaxyColor(n.project,ci);
+    var color=isSystem?'#9ca3af':getGalaxyColor(n.project,ci);
+    // Cap system hub node radius to avoid dominating the layout
+    var maxR=isSystem?8:999;
     return {
       id:n.id, label:n.label, project:n.project, project_title:n.project_title||n.project,
       type:n.type, filename:n.filename, tags:n.tags||[],
       status:n.status||'active', confidence:n.confidence||'',
       x:_univW/2+(Math.random()-.5)*500, y:_univH/2+(Math.random()-.5)*500,
       vx:0, vy:0,
-      r:5+12*(deg/_univMaxDeg),
+      r:Math.min(maxR, 5+12*(deg/_univMaxDeg)),
       color:color,
       labelAlpha:0,
       labelTargetAlpha:0,

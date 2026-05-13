@@ -2425,12 +2425,19 @@ def _save_universe_config(config: dict):
 
 
 def _universe_project_nodes(proj):
-    """Build graph data for a single project with project-prefixed IDs."""
+    """Build graph data for a single project with project-prefixed IDs.
+
+    Excludes system pages (index.md, log.md, overview.md) — these are
+    consolidated into global hub nodes by _build_universe_graph().
+    """
     nodes, edges, node_map = _build_graph_data(proj)
     prefixed_nodes = []
     prefixed_edges = []
+    sys_pages = {"index.md", "log.md", "overview.md"}
 
     for n in nodes:
+        if n["filename"] in sys_pages:
+            continue
         nid = f"{proj.slug}/{n['filename']}"
         prefixed_nodes.append({
             "id": nid,
@@ -2523,7 +2530,12 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
 
 
 def _build_universe_graph(include_hidden: bool = False) -> dict:
-    """构建全项目统一图谱。"""
+    """构建全项目统一图谱。
+
+    System pages (index.md, log.md) are consolidated into two global hub
+    nodes (system/index, system/log) to avoid artificial hub effects
+    that inflate project-internal distances.
+    """
     config = _load_universe_config()
     excluded = set(config.get("excluded_projects", []))
 
@@ -2547,6 +2559,47 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
         }
 
     bridges = _detect_cross_project_bridges(all_nodes)
+
+    # Build global hub nodes for index.md and log.md
+    sys_hubs = {
+        "system/index": {
+            "id": "system/index", "label": "Index",
+            "type": "system", "filename": "index.md",
+            "word_count": 0, "tags": [],
+            "project": "system", "project_title": "System",
+            "status": "active", "confidence": "",
+        },
+        "system/log": {
+            "id": "system/log", "label": "Log",
+            "type": "system", "filename": "log.md",
+            "word_count": 0, "tags": [],
+            "project": "system", "project_title": "System",
+            "status": "active", "confidence": "",
+        },
+    }
+    all_node_ids = {n["id"] for n in all_nodes} | set(sys_hubs.keys())
+
+    # Remap edges that point to project-level index.md/log.md to system hubs
+    hub_map = {}
+    for proj in project_registry.list_projects():
+        if not include_hidden and proj.slug in excluded:
+            continue
+        for sp in ("index.md", "log.md"):
+            hub_map[f"{proj.slug}/{sp}"] = f"system/{sp}"
+
+    remapped_edges = []
+    for e in all_edges:
+        src = hub_map.get(e["source"], e["source"])
+        tgt = hub_map.get(e["target"], e["target"])
+        # Only keep edges where both endpoints exist
+        if src in all_node_ids and tgt in all_node_ids:
+            new_edge = dict(e)
+            new_edge["source"] = src
+            new_edge["target"] = tgt
+            remapped_edges.append(new_edge)
+
+    all_edges = remapped_edges
+    all_nodes.extend(sys_hubs.values())
 
     return {
         "universe": {
