@@ -8,7 +8,7 @@
       "description": "整理并维护Downloads目录中的各类文档，包括财务报告、知识库建设、AI智能体分析、业务流程等",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-11",
+      "last_used": "2026-05-14",
       "template": "llm-research"
     },
     {
@@ -44,7 +44,7 @@
       "description": "专门用来进行行业分类标准的知识维护",
       "model": "default",
       "created": "2026-05-04",
-      "last_used": "2026-05-09",
+      "last_used": "2026-05-14",
       "template": "llm-research"
     },
     {

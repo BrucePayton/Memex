@@ -11,6 +11,7 @@
 | 2026-05-09 | 综合修复 | **平台多问题修复**：Wiki 404 路由修复、领域配置/Provider 路由挂载、通知中心事件驱动启用（快照/数据源/Wiki 同步/启动）、领域模板静态→动态聚合重构、外部资源管理 Tab 重构、Claw Code 配置面板 |
 | 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：孤儿 `</Suspense>` 和 `} />` 标签破坏 JSX 解析树 |
 | 2026-05-08 | 外部资源管理 | 外部资源管理功能补全：平台注册管理 API、适配器源码、前端平台管理页面与路由 |
+| 2026-05-14 | Bug 修复 | **历史会话首次点击骨扇屏折叠不展开修复**：三重折叠默认值均为 `false`（阶段卡片/阶段组/render fallback），导致历史会话首次加载内容不可见；修正为 `true`（默认展开），并在切换会话时重置折叠状态；补充 [[历史会话编排阶段骨扇屏完全不渲染修复]] 的前序 bug [^src-bugfix-2026-05-14-bone-fan-screen-collapsed-on-first-click] |
 | 2026-05-14 | Bug 修复 | **历史会话编排阶段（骨扇屏）完全不渲染修复**：`useStageTreeMemo` 中子阶段归入 `childStageIds` 时未验证父节点存在性，后端 `parent_stage_id="supper_short"` 事件无对应父阶段，导致所有子阶段渲染时被 `return null` 跳过；修复为添加 `stageMessagesById.has()` 检查，与 `buildStageForest` 保持一致 |
 | 2026-05-08 | 前端调试 | React const 暂时性死区导致 Cannot access before initialization 错误排查 |
 | 2026-05-08 | 开发修复 | 平台配置模块迁移侧边栏系统管理及权限修复 |
@@ -27,6 +28,7 @@
 [^src-llm-统一调用收敛至-central-config]: projects/askdata-platform/raw/llm-统一调用收敛至-central-config.md
 [^src-2026-05-09-claw-dashboard-loader2-fix-and-config-refactor]: projects/askdata-platform/raw/2026-05-09-claw-dashboard-loader2-fix-and-config-refactor.md
 [^src-wiki-知识库功能完整集成-实现记录]: projects/askdata-platform/raw/wiki-知识库功能完整集成-实现记录.md
+[^src-bugfix-2026-05-14-bone-fan-screen-collapsed-on-first-click]: source-bugfix-2026-05-14-bone-fan-screen-collapsed-on-first-click.md
 
 ## 2026-05-11 | query | AskData的当前项目总览
 生成 AskData 平台当前项目状态综合分析，归纳为架构基础、功能规划、Wiki 知识库、稳定性与 Debug、子模块演进五大维度。

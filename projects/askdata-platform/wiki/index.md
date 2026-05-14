@@ -1,5 +1,8 @@
 # AskData Platform Wiki
 
+## Sources
+- [[source-bugfix-2026-05-14-bone-fan-screen-collapsed-on-first-click]] — 历史会话首次点击骨扇屏折叠不展开修复记录
+
 ## 架构设计
 - [AskData 架构设计](askdata-架构设计.md)
 - [Free-Style-Report 项目总览](free-style-report-项目总览.md)
@@ -42,6 +45,7 @@
 - [前端容器 Nginx 启动时主机名解析失败](askdata-platform/Debug/前端容器-nginx-启动时主机名解析失败问题排查.md)
 - [MainSide 通知中心功能恢复](askdata-platform/Debug/mainside通知中心功能恢复-代码回归后功能重建.md)
 - [历史会话编排阶段（骨扇屏）完全不渲染修复](askdata-platform/Debug/历史会话编排阶段骨扇屏完全不渲染修复.md)
+- [历史会话首次点击骨扇屏折叠不展开修复](askdata-platform/Debug/历史会话首次点击骨扇屏折叠不展开修复.md)
 - [Keycloak 系统令牌获取失败](askdata-platform/Debug/keycloak-系统令牌获取失败-username-or-password-is-incorrect.md)
 - [DSC Frontend Nginx 挂载失败](askdata-platform/Debug/dsc-frontend-nginx挂载失败-目录而非文件问题排查.md)
 
