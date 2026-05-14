@@ -1,12 +1,15 @@
-
-[Frontmatter]
-title = "Domain Config功能规范"
-type = "architecture"
-tags = ["配置管理", "规范", "架构设计"]
-created = "2025-05-04"
-last_updated = "2025-05-04"
-confidence = "high"
-sources = ["基于MCP工具能力梳理", "行业最佳实践"]
+---
+title: "Domain Config功能规范"
+type: concept
+created: 2026-05-04
+last_updated: 2026-05-04
+source_count: 0
+confidence: medium
+status: active
+tags:
+  - 配置管理
+  - 规范
+  - 架构设计
 ---
 # Domain Config功能规范
 ## 1. 概述

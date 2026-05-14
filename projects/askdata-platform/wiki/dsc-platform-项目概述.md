@@ -1,3 +1,17 @@
+---
+title: "DSC Platform 项目概述"
+type: concept
+created: 2026-05-02
+last_updated: 2026-05-02
+source_count: 0
+confidence: medium
+status: active
+tags:
+  - dsc
+  - data-supply-chain
+  - platform
+---
+
 # DSC Platform (Data Supply Chain Platform)
 
 ## 项目简介

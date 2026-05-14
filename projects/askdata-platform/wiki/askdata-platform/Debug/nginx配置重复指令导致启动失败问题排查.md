@@ -6,14 +6,11 @@ last_updated: 2026-05-07
 source_count: 0
 confidence: medium
 status: active
-tags: []
----
-
----
-title: nginx配置重复指令导致启动失败问题排查
-type: analysis
-date: 2026-05-07
-tags: [nginx, docker, deployment, debug]
+tags:
+  - nginx
+  - docker
+  - deployment
+  - debug
 ---
 
 ## 问题现象

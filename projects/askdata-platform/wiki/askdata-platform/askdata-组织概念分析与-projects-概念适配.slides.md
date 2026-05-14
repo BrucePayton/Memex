@@ -1,4 +1,16 @@
 ---
+title: "AskData 组织概念分析与 Projects 概念适配（演示文稿）"
+type: analysis
+created: 2026-05-02
+last_updated: 2026-05-02
+source_count: 0
+confidence: medium
+status: active
+tags:
+  - askdata
+  - workspace
+  - projects
+  - marp
 marp: true
 theme: default
 paginate: true

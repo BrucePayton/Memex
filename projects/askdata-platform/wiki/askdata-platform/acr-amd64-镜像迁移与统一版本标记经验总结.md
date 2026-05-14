@@ -6,7 +6,12 @@ last_updated: 2026-05-09
 source_count: 1
 confidence: medium
 status: active
-tags: []
+tags:
+  - deployment
+  - acr
+  - docker
+  - amd64
+  - migration
 sources:
   - deployment-remote-acr-amd64-migration
 ---

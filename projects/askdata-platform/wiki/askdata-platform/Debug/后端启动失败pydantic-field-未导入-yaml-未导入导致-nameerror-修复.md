@@ -6,7 +6,12 @@ last_updated: 2026-05-09
 source_count: 0
 confidence: medium
 status: active
-tags: []
+tags:
+  - pydantic
+  - yaml
+  - backend
+  - startup
+  - debug
 ---
 
 ## 现象

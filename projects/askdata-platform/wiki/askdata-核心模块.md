@@ -1,3 +1,17 @@
+---
+title: "AskData 核心模块"
+type: concept
+created: 2026-05-02
+last_updated: 2026-05-02
+source_count: 0
+confidence: medium
+status: active
+tags:
+  - askdata
+  - core-modules
+  - architecture
+---
+
 # AskData 核心模块
 
 ## 1. AskData 问数分析模块

@@ -2,8 +2,10 @@
 title: "AskData的当前项目总览"
 type: analysis
 created: 2026-05-11
-updated: 2026-05-11
-sources: []
+last_updated: 2026-05-11
+source_count: 0
+confidence: medium
+status: active
 tags:
   - query-result
 ---
