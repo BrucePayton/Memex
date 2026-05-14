@@ -171,4 +171,5 @@ style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
 ## 关联文档
 
 - [历史会话加载性能优化](../性能优化/历史会话加载性能优化.md) — 上一轮优化记录
+- [[历史会话编排阶段骨扇屏完全不渲染修复]] — 历史会话编排阶段渲染 bug 修复（2026-05-14）
 - [AskData 架构设计](../../askdata-架构设计.md)

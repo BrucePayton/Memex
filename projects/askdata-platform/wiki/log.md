@@ -11,6 +11,7 @@
 | 2026-05-09 | 综合修复 | **平台多问题修复**：Wiki 404 路由修复、领域配置/Provider 路由挂载、通知中心事件驱动启用（快照/数据源/Wiki 同步/启动）、领域模板静态→动态聚合重构、外部资源管理 Tab 重构、Claw Code 配置面板 |
 | 2026-05-08 | 前端部署修复 | 前端 Docker 打包失败修复：孤儿 `</Suspense>` 和 `} />` 标签破坏 JSX 解析树 |
 | 2026-05-08 | 外部资源管理 | 外部资源管理功能补全：平台注册管理 API、适配器源码、前端平台管理页面与路由 |
+| 2026-05-14 | Bug 修复 | **历史会话编排阶段（骨扇屏）完全不渲染修复**：`useStageTreeMemo` 中子阶段归入 `childStageIds` 时未验证父节点存在性，后端 `parent_stage_id="supper_short"` 事件无对应父阶段，导致所有子阶段渲染时被 `return null` 跳过；修复为添加 `stageMessagesById.has()` 检查，与 `buildStageForest` 保持一致 |
 | 2026-05-08 | 前端调试 | React const 暂时性死区导致 Cannot access before initialization 错误排查 |
 | 2026-05-08 | 开发修复 | 平台配置模块迁移侧边栏系统管理及权限修复 |
 | 2026-05-07 | 数据库迁移 | 补全 17 张缺失数据库表（DomainConfig/MCP/Wiki/LLM Config 等） |

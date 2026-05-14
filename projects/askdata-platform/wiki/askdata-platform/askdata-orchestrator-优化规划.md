@@ -348,6 +348,10 @@ class DecisionRecord:
 | Phase 3: 并发执行 | 3-4 周 | 高 | 高 | P3 |
 | Phase 5: 可观测性 | 2 周 | 中 | 低 | P4 |
 
+## 已知问题
+
+- [[askdata-platform/Debug/历史会话编排阶段骨扇屏完全不渲染修复]] — 历史加载时 `useStageTreeMemo` 未验证父阶段存在性导致子阶段全部被跳过（2026-05-14 已修复）
+
 ## 不做的部分
 
 - **不替换 LangGraph** — 继续作为状态图运行时

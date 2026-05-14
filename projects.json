@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "fengkong-shouce",
+  "active": "askdata-platform",
   "projects": [
     {
       "slug": "个人文档中心",
@@ -17,7 +17,7 @@
       "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
       "model": "default",
       "created": "2026-05-02",
-      "last_used": "2026-05-11",
+      "last_used": "2026-05-14",
       "template": "llm-research"
     },
     {
@@ -26,7 +26,7 @@
       "description": "专门用来维护个人日常的开发日志信息",
       "model": "default",
       "created": "2026-04-29",
-      "last_used": "2026-05-11",
+      "last_used": "2026-05-13",
       "template": "personal-notes"
     },
     {
