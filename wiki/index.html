@@ -717,7 +717,7 @@ body.universe-view .idx-banner{display:none;}
 </div></div>
 
 <script>
-const TC={source:'#3fb950',entity:'#58a6ff',concept:'#bc8cff',comparison:'#d29922',analysis:'#39d2c0',overview:'#8b949e',missing:'#f85149',unknown:'#f85149',api:'#2dd4bf',architecture:'#a78bfa',configuration_guide:'#fbbf24',deployment:'#38bdf8',development:'#34d399',faq:'#fb923c',module:'#818cf8',planning:'#c084fc',system:'#94a3b8',technique:'#e879f9'};
+const TC={source:'#3fb950',entity:'#58a6ff',concept:'#bc8cff',comparison:'#d29922',analysis:'#39d2c0',overview:'#8b949e',missing:'#f85149',unknown:'#f85149'};
 let D=null,folders=null,view='page',cur=null,curFolder=null,tab='tree',sq='',lastHash='',editing=false;
 
 // ─── Graph state (shared between showGraph and global helpers) ───
@@ -827,9 +827,6 @@ const I18N={
     type_source:'Source', type_entity:'Entity', type_concept:'Concept',
     type_comparison:'Comparison', type_analysis:'Analysis', type_overview:'Overview',
     type_technique:'Technique', type_missing:'Missing link', type_unknown:'Unknown',
-    type_api:'API', type_architecture:'Architecture', type_configuration_guide:'Configuration Guide',
-    type_deployment:'Deployment', type_development:'Development', type_faq:'FAQ',
-    type_module:'Module', type_planning:'Planning', type_system:'System',
     type_source_summary:'Source summary',
     cat_work:'Work', cat_analyze:'Analyze', cat_browse:'Browse', cat_create:'Create', cat_more:'More',
     wr_tip_suffix:'(last {n} queries)',
@@ -857,20 +854,8 @@ const I18N={
     universe_path_none:'No path found',
     universe_path_hops:' hops',
     universe_legend_title:'Legend',
-    universe_legend_types:'Types',
     universe_hover_hint:'Hover or click a node',
     universe_no_nodes:'No nodes in universe',
-    universe_title:'Knowledge Universe',
-    universe_button:'Universe',
-    universe_load_failed:'Universe data load failed',
-    universe_open_page_btn:'Open Page',
-    universe_merged_label:'Instances',
-    universe_path_panel_title:'Path',
-    universe_path_export_btn:'Export',
-    universe_path_reset_btn:'Reset',
-    universe_path_panel_hops:'hops',
-    universe_path_panel_cross:'cross-project',
-    universe_export_path_title:'Universe Path Export',
     nav_raw:'Raw sources',
     nav_settings:'AI & CLI settings',
     raw_loading:'Loading…',
@@ -1096,20 +1081,8 @@ const I18N={
     universe_path_none:'경로 없음',
     universe_path_hops:' 홉',
     universe_legend_title:'범례',
-    universe_legend_types:'유형',
     universe_hover_hint:'노드에 마우스를 올리거나 클릭하세요',
     universe_no_nodes:'우주에 노드가 없습니다',
-    universe_title:'지식 우주',
-    universe_button:'우주',
-    universe_load_failed:'우주 데이터 로드 실패',
-    universe_open_page_btn:'페이지 열기',
-    universe_merged_label:'인스턴스',
-    universe_path_panel_title:'경로',
-    universe_path_export_btn:'내보내기',
-    universe_path_reset_btn:'초기화',
-    universe_path_panel_hops:'홉',
-    universe_path_panel_cross:'프로젝트 간',
-    universe_export_path_title:'우주 경로 내보내기',
     nav_raw:'원본(raw)', nav_settings:'AI·CLI 설정',
     raw_loading:'불러오는 중…', raw_empty:'원본 파일이 없습니다.', raw_viewer_title:'원본 파일',
     raw_binary_hint:'[바이너리 파일 — 미리보기 불가]', raw_sources_strip_title:'원본 파일(raw)',
@@ -1130,9 +1103,6 @@ const I18N={
     type_source:'소스', type_entity:'엔티티', type_concept:'개념',
     type_comparison:'비교', type_analysis:'분석', type_overview:'개요',
     type_technique:'기법', type_missing:'누락 링크', type_unknown:'알 수 없음',
-    type_api:'API', type_architecture:'아키텍처', type_configuration_guide:'설정 가이드',
-    type_deployment:'배포', type_development:'개발', type_faq:'자주 묻는 질문',
-    type_module:'모듈', type_planning:'기획', type_system:'시스템',
     type_source_summary:'소스 요약',
     cat_work:'작업', cat_analyze:'분석', cat_browse:'탐색', cat_create:'만들기', cat_more:'더보기',
     lang_next_en:'EN', lang_next_ko:'한국어', lang_next_zh:'中文',
@@ -1265,9 +1235,6 @@ const I18N={
     schema_title:'CLAUDE.md', schema_desc:'此文件向 Claude 说明如何运营 wiki。自下次 收录/问答/检查 起生效。',
     last_updated:'更新', type_source:'来源', type_entity:'实体', type_concept:'概念', type_comparison:'比较', type_analysis:'分析', type_overview:'概览',
     type_technique:'技法', type_missing:'缺失链接', type_unknown:'未知',
-    type_api:'API', type_architecture:'架构', type_configuration_guide:'配置指南',
-    type_deployment:'部署', type_development:'开发', type_faq:'常见问题',
-    type_module:'模块', type_planning:'规划', type_system:'系统',
     type_source_summary:'来源摘要',
     cat_work:'工作', cat_analyze:'分析', cat_browse:'浏览', cat_create:'创建', cat_more:'更多', wr_tip_suffix:'（最近 {n} 次问答）',
     confirm_revert_specific:'要恢复「{name}」吗？此次收录新建的文件将删除，已改文件将还原。',
@@ -1287,20 +1254,8 @@ const I18N={
     universe_path_none:'无路径',
     universe_path_hops:' 跳',
     universe_legend_title:'图例',
-    universe_legend_types:'类型',
     universe_hover_hint:'悬停或点击节点',
     universe_no_nodes:'宇宙中没有节点',
-    universe_title:'知识宇宙',
-    universe_button:'宇宙',
-    universe_load_failed:'知识宇宙数据加载失败',
-    universe_open_page_btn:'打开页面',
-    universe_merged_label:'合并节点',
-    universe_path_panel_title:'路径',
-    universe_path_export_btn:'导出',
-    universe_path_reset_btn:'重置',
-    universe_path_panel_hops:'跳',
-    universe_path_panel_cross:'跨项目',
-    universe_export_path_title:'知识宇宙路径导出',
     nav_raw:'原始文件', nav_settings:'AI 与 CLI 设置',
     raw_loading:'加载中…', raw_empty:'当前项目没有 raw 文件。', raw_viewer_title:'Raw 原文',
     raw_binary_hint:'[二进制文件 — 无法预览]', raw_sources_strip_title:'原始来源 (raw)',
@@ -3575,8 +3530,7 @@ async function showGraph(){
     var labelFont='11px -apple-system,sans-serif';
     var maxLabelW=Math.min(80,n.label.length*6);
     var labelLines=autoWrap(n.label,maxLabelW,labelFont);
-    var angle=Math.random()*Math.PI*2,radius=Math.random()*200;
-    return{...n,x:W/2+Math.cos(angle)*radius,y:H/2+Math.sin(angle)*radius,vx:0,vy:0,r:r,
+    return{...n,x:W/2+(Math.random()-.5)*300,y:H/2+(Math.random()-.5)*300,vx:0,vy:0,r:r,
       isGod:isGod,baseColor:baseColor,cHue:cHue,labelLines:labelLines,labelFont:labelFont};
   });
   // Build node map with dual keys (id + filename) for compatibility
@@ -3615,12 +3569,9 @@ async function showGraph(){
       var e=es[ei];var dx=e.t.x-e.s.x,dy=e.t.y-e.s.y,d=Math.sqrt(dx*dx+dy*dy)||1,f=(d-140)*.004;
       e.s.vx+=dx/d*f;e.s.vy+=dy/d*f;e.t.vx-=dx/d*f;e.t.vy-=dy/d*f;
     }
-    var maxR=Math.min(W,H)*0.42;
     for(var i=0;i<ns.length;i++){
-      var n=ns[i];if(n===drag)continue;n.vx*=.82;n.vy*=.82;
-      var dx=n.x-cx,dy=n.y-cy,dist=Math.sqrt(dx*dx+dy*dy)||1;
-      if(dist>maxR){var push=(dist-maxR)*0.05;n.vx-=dx/dist*push;n.vy-=dy/dist*push;}
-      n.x+=n.vx;n.y+=n.vy;
+      var n=ns[i];if(n===drag)continue;n.vx*=.82;n.vy*=.82;n.x+=n.vx;n.y+=n.vy;
+      n.x=Math.max(n.r+10,Math.min(W-n.r-10,n.x));n.y=Math.max(n.r+10,Math.min(H-n.r-10,n.y));
     }
     ctx.clearRect(0,0,W*dpr,H*dpr);
     // Apply zoom and pan transformation
@@ -3866,15 +3817,12 @@ async function showUniverse(){
   cur=null;
   renderToolbar();
 
-  // Clear stale state so loadUniverseData() always rebuilds the canvas
-  UNIVERSE_DATA=null;
-
   var area=document.getElementById('content');
   area.innerHTML=
     '<div id="univLayout" style="display:flex;height:100%;">'+
       '<div id="univSidebar" style="width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">'+
         '<div style="padding:12px 14px;border-bottom:1px solid var(--border);">'+
-          '<h3 style="margin:0 0 2px 0;font-size:14px;color:var(--text);">'+esc(t('universe_title'))+'</h3>'+
+          '<h3 style="margin:0 0 2px 0;font-size:14px;color:var(--text);">Knowledge Universe</h3>'+
           '<div id="univStats" style="font-size:11px;color:var(--muted);"></div>'+
         '</div>'+
         '<div style="padding:12px;border-bottom:1px solid var(--border);">'+
@@ -3885,16 +3833,6 @@ async function showUniverse(){
               'style="padding:7px 10px;background:var(--bg);border:1px solid var(--border2);color:var(--muted);border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;">'+esc(t('universe_path_btn'))+'</button>'+
           '</div>'+
           '<div id="univPathHint" style="font-size:11px;color:var(--muted);margin-top:4px;display:none;">'+esc(t('universe_path_hint'))+'</div>'+
-          '<div id="univPathPanel" style="display:none;margin-top:8px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">'+
-            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'+
-              '<div style="font-size:11px;color:var(--muted);font-weight:600;">'+esc(t('universe_path_panel_title'))+'</div>'+
-              '<div style="display:flex;gap:4px;">'+
-                '<button onclick="univExportPath()" style="padding:2px 8px;background:var(--bg);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:10px;">'+esc(t('universe_path_export_btn'))+'</button>'+
-                '<button onclick="univResetPath()" style="padding:2px 8px;background:var(--bg);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:10px;">'+esc(t('universe_path_reset_btn'))+'</button>'+
-              '</div>'+
-            '</div>'+
-            '<div id="univPathPanelContent" style="max-height:150px;overflow-y:auto;font-size:11px;"></div>'+
-          '</div>'+
           '<div id="univSearchResults" style="max-height:120px;overflow-y:auto;display:none;"></div>'+
         '</div>'+
         '<div id="univInfoPanel" style="padding:14px;border-bottom:1px solid var(--border);min-height:80px;">'+
@@ -3935,7 +3873,6 @@ async function loadUniverseData(){
 
     var u=UNIVERSE_DATA.universe||{};
     var statsText=u.total_nodes+' nodes &middot; '+u.total_edges+' edges &middot; '+Object.keys(u.projects||{}).length+' projects';
-    if(u.merged_nodes>0) statsText+=' &middot; '+u.merged_nodes+' merged';
     var statsEl=document.getElementById('univStats');
     if(statsEl) statsEl.innerHTML='<span>'+statsText+'</span>';
     var footerEl=document.getElementById('univFooter');
@@ -3946,8 +3883,8 @@ async function loadUniverseData(){
     renderUniverseLegend();
 
   }catch(e){
-    console.error(t('universe_load_failed')+':',e);
-    toast(t('universe_load_failed'),'err');
+    console.error('Universe load failed:',e);
+    toast('Universe data load failed','err');
   }
 }
 
@@ -4021,23 +3958,13 @@ function buildUniverseVis(){
     var color=isSystem?'#9ca3af':getGalaxyColor(n.project,ci);
     // Cap system hub node radius to avoid dominating the layout
     var maxR=isSystem?8:999;
-    var isMerged=n.merged===true;
-    // Merged nodes get slightly larger
-    var radiusBonus=isMerged?2:0;
-    var projColors=[];
-    if(isMerged&&n.instances){
-      projColors=n.instances.map(function(inst){
-        return getGalaxyColor(inst.project,0);
-      });
-    }
     return {
       id:n.id, label:n.label, project:n.project, project_title:n.project_title||n.project,
       type:n.type, filename:n.filename, tags:n.tags||[],
       status:n.status||'active', confidence:n.confidence||'',
-      merged:isMerged, instances:n.instances||null, projColors:projColors,
       x:_univW/2+(Math.random()-.5)*500, y:_univH/2+(Math.random()-.5)*500,
       vx:0, vy:0,
-      r:Math.min(maxR, 5+12*(deg/_univMaxDeg))+radiusBonus,
+      r:Math.min(maxR, 5+12*(deg/_univMaxDeg)),
       color:color,
       labelAlpha:0,
       labelTargetAlpha:0,
@@ -4260,14 +4187,6 @@ function _univFocusNode(nodeId){
   showUniverseNodeInfo(nodeId);
 }
 
-function univOpenPage(proj, filename){
-  if(typeof CURRENT_PROJECT!=='undefined'&&CURRENT_PROJECT!==proj){
-    switchProject(proj).then(function(){ showPage(filename); });
-  }else{
-    showPage(filename);
-  }
-}
-
 function showUniverseNodeInfo(nodeId){
   var n=_univNm[nodeId];
   if(!n)return;
@@ -4302,32 +4221,6 @@ function showUniverseNodeInfo(nodeId){
   if(n.confidence==='low') confBadge=' <span style="font-size:10px;color:#f59e0b;">(low confidence)</span>';
   else if(n.confidence==='high') confBadge=' <span style="font-size:10px;color:#34d399;">(high confidence)</span>';
 
-  // Build action buttons
-  var buttonsHtml='<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">';
-  if(n.merged&&n.instances){
-    // Merged node: show per-instance "Open" buttons
-    buttonsHtml+='<div style="width:100%;font-size:11px;color:var(--muted);margin-bottom:2px;">'+esc(t('universe_merged_label'))+' ('+n.instances.length+')</div>';
-    n.instances.forEach(function(inst){
-      var th=getGalaxyTheme(inst.project);
-      var projName=th.name||inst.project;
-      var safeProj=inst.project.replace(/'/g,"\\'");
-      var safeFile=inst.filename.replace(/'/g,"\\'");
-      buttonsHtml+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;margin:2px 0;border-radius:4px;background:rgba(255,255,255,0.04);font-size:11px;">'+
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+
-          '<span style="color:'+th.color+';">● </span>'+esc(projName)+' — '+esc(inst.filename)+'</span>'+
-        '<button onclick="univOpenPage(\''+safeProj+'\',\''+safeFile+'\')" style="padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;white-space:nowrap;">'+esc(t('universe_open_page_btn'))+'</button>'+
-        '</div>';
-    });
-  }else if(n.project!=='system'){
-    // Single-project node
-    var safeProj=n.project.replace(/'/g,"\\'");
-    var safeFile=(n.filename||'').replace(/'/g,"\\'");
-    if(safeFile){
-      buttonsHtml+='<button onclick="univOpenPage(\''+safeProj+'\',\''+safeFile+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">'+esc(t('universe_open_page_btn'))+'</button>';
-    }
-  }
-  buttonsHtml+='</div>';
-
   var ic=document.getElementById('univInfoContent');
   if(ic){
     ic.innerHTML=
@@ -4335,11 +4228,9 @@ function showUniverseNodeInfo(nodeId){
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Type: <span style="color:var(--text2);">'+esc(n.type||'unknown')+'</span></div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Status: <span style="color:var(--text2);">'+esc(n.status||'active')+'</span></div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Confidence: <span style="color:var(--text2);">'+esc(n.confidence||'—')+'</span></div>'+
-      (n.merged
-        ? '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Projects: <span style="color:var(--text2);">'+n.instances.map(function(i){return esc(i.project);}).join(', ')+'</span></div>'
-        : '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Project: <span style="color:var(--text2);">'+esc(n.project_title||n.project)+'</span></div>')+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Project: <span style="color:var(--text2);">'+esc(n.project_title||n.project)+'</span></div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Degree: <span style="color:var(--text2);">'+(universeDegreeMap[n.id]||0)+'</span></div>'+
-      tagsHtml+buttonsHtml+neighborHtml;
+      tagsHtml+neighborHtml;
   }
 }
 
@@ -4347,29 +4238,11 @@ function renderUniverseLegend(){
   var container=document.getElementById('univLegend');
   if(!container||!UNIVERSE_DATA)return;
 
-  // Type colors legend
-  var typesSeen={};
-  (UNIVERSE_DATA.nodes||[]).forEach(function(n){if(n.type)typesSeen[n.type]=true;});
-  var typeKeys=Object.keys(typesSeen).sort();
-
-  var html='';
-  if(typeKeys.length){
-    html+='<div style="margin-bottom:10px;">';
-    html+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">'+esc(t('universe_legend_types'))+'</div>';
-    html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
-    typeKeys.forEach(function(tp){
-      var col=TC[tp]||'#8b949e';
-      html+='<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);">'+
-        '<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'+col+';"></div>'+
-        esc(graphTypeLabel(tp))+'</div>';
-    });
-    html+='</div></div>';
-  }
-
   var projects=UNIVERSE_DATA.universe.projects||{};
   var projKeys=Object.keys(projects);
   var projIdx={}; projKeys.forEach(function(p,i){projIdx[p]=i;});
 
+  var html='';
   projKeys.forEach(function(slug){
     var info=projects[slug];
     var ci=projIdx[slug];
@@ -4427,75 +4300,6 @@ function _univClearPath(){
   _univPathNodeSet=null; _univPathEdgeSet=null;
   var hint=document.getElementById('univPathHint');
   if(hint) hint.textContent=t('universe_path_hint');
-  var panel=document.getElementById('univPathPanel');
-  if(panel) panel.style.display='none';
-}
-
-function univResetPath(){
-  _univClearPath();
-  var btn=document.getElementById('univPathBtn');
-  if(btn) btn.style.background='';
-  _univPathMode=false;
-}
-
-async function univExportPath(){
-  if(!_univPathA||!_univPathB)return;
-  try{
-    var params='?source_id='+encodeURIComponent(_univPathA)+'&target_id='+encodeURIComponent(_univPathB);
-    var resp=await fetch('/api/graph/universe-shortest-path-with-content'+params);
-    var data=await resp.json();
-    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url; a.download='universe-path-'+_univPathA.replace('/','-')+'-to-'+_univPathB.replace('/','-')+'.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }catch(e){
-    toast('Export failed: '+e.message,'err');
-  }
-}
-
-function showUniversePathPanel(){
-  var panel=document.getElementById('univPathPanel');
-  var content=document.getElementById('univPathPanelContent');
-  if(!panel||!content)return;
-
-  if(!_univPathNodeSet||!_univPathA||!_univPathB){
-    panel.style.display='none';
-    return;
-  }
-
-  panel.style.display='block';
-
-  var srcNode=_univNm[_univPathA];
-  var tgtNode=_univNm[_univPathB];
-  var pathArray=Array.from(_univPathNodeSet);
-  var crossCount=0;
-  var lastProj='';
-  var hops=pathArray.length-1;
-
-  var html='<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
-    '<span style="color:var(--text2);">'+hops+' '+t('universe_path_panel_hops')+'</span>'+
-    '<span style="color:var(--muted);">'+pathArray.length+' nodes</span></div>';
-
-  pathArray.forEach(function(nid){
-    var node=_univNm[nid];
-    var projColor=node?getGalaxyColor(node.project,0):'#8b949e';
-    var projName=node?(node.project_title||node.project):nid.split('/')[0];
-    var label=node?node.label:nid;
-    if(node&&node.project!==lastProj&&lastProj!=='')crossCount++;
-    lastProj=node?node.project:lastProj;
-    html+='<div style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:11px;">'+
-      '<span style="color:'+projColor+';font-weight:bold;">●</span>'+
-      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);">'+esc(label)+'</span>'+
-      '<span style="color:var(--muted);font-size:10px;">'+esc(projName)+'</span>'+
-      '</div>';
-  });
-
-  if(crossCount>0){
-    html+='<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border2);font-size:10px;color:#fbbf24;">'+esc(t('universe_path_panel_cross'))+' ('+crossCount+' transitions)</div>';
-  }
-  content.innerHTML=html;
 }
 
 async function _univFindPath(){
@@ -4525,12 +4329,10 @@ async function _univFindPath(){
         return [e.source,e.target].sort().join('|||');
       }));
       if(hint) hint.textContent=t('universe_path_found')+data.hops+t('universe_path_hops');
-      showUniversePathPanel();
     }else{
       _univPathNodeSet=null; _univPathEdgeSet=null;
       _univPathA=null; _univPathB=null;
       if(hint) hint.textContent=t('universe_path_none')+': '+data.error;
-      showUniversePathPanel();
     }
   }catch(e){
     if(reqId!==_univPathReqId) return;
@@ -4674,24 +4476,6 @@ function _univTick(){
       ctx.strokeStyle='rgba(122,162,247,'+(0.4+pulse*0.4)+')';
       ctx.lineWidth=2.5;
       ctx.stroke();
-    }
-
-    // Merged node: multi-color arc ring (one arc per project)
-    if(n.merged&&n.projColors&&n.projColors.length>1){
-      var ringR=n.r+3;
-      var arcLen=(Math.PI*2)/n.projColors.length;
-      var gapLen=0.15;
-      ctx.lineWidth=2.5;
-      n.projColors.forEach(function(col,j){
-        var startA=j*arcLen;
-        var endA=startA+arcLen-gapLen;
-        ctx.beginPath();
-        ctx.arc(n.x,n.y,ringR,startA,endA);
-        ctx.strokeStyle=col;
-        ctx.globalAlpha=baseAlpha*0.85;
-        ctx.stroke();
-      });
-      ctx.globalAlpha=baseAlpha;
     }
 
     ctx.globalAlpha=baseAlpha;
@@ -5801,7 +5585,7 @@ function renderToolbar(){
     h+='</div></div>';
   });
   // Universe button in normal toolbar — always visible
-  h+='<button class="univ-btn" onclick="showUniverse()" title="'+esc(t('universe_title'))+'" style="margin-left:auto;">🌌 '+esc(t('universe_button'))+'</button>';
+  h+='<button class="univ-btn" onclick="showUniverse()" title="Knowledge Universe" style="margin-left:auto;">🌌 Universe</button>';
   h+='<span class="bc" id="bc"></span>';
   tb.innerHTML=h;
 }

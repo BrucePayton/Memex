@@ -16,6 +16,8 @@ from pathlib import Path
 import project_registry
 from project_registry import REGISTRY_FILE
 import wiki_ops
+import llm_provider
+from scheduler import _load_schedules as _sched_load, _save_schedules as _save_sched_files
 
 PORT = int(os.environ.get("PORT", "8090"))
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -23,77 +25,16 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 WIKI_DIR = PROJECT_ROOT / "wiki"
 RAW_DIR = PROJECT_ROOT / "raw"
 
-# subprocess가 claude CLI를 찾을 수 있도록 PATH 보장
-_claude = shutil.which("claude")
-if not _claude:
-    # nvm, homebrew 등 일반적인 경로 추가
-    for p in [os.path.expanduser("~/.nvm/versions/node"), "/usr/local/bin", "/opt/homebrew/bin"]:
-        if os.path.isdir(p):
-            for root, dirs, files in os.walk(p):
-                if "claude" in files:
-                    os.environ["PATH"] = root + ":" + os.environ.get("PATH", "")
-                    _claude = os.path.join(root, "claude")
-                    break
-            if _claude:
-                break
-
-CLAUDE_TOOLS = os.environ.get("CLAUDE_TOOLS", "Edit,Write,Read,Glob,Grep")
 # 환경변수로 조정 가능. 기본 600초(10분) — Ingest는 페이지 10+개 생성 시 오래 걸림.
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "600"))
 # 짧은 진단용 timeout
 CLAUDE_QUICK_TIMEOUT = int(os.environ.get("CLAUDE_QUICK_TIMEOUT", "30"))
+# Stream heartbeat interval (seconds)
+HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))
 
 # ─── 런타임 설정 (모델 등) ───
 
 SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
-
-_DEFAULT_SETTINGS = {
-    "model": "default",
-    "cli_type": "claude",             # "claude" 或 "claw"
-    "claude_cli_binary": "claude",
-    "claude_cli_extra_args": [],
-    "cli_path_extra": "",
-    "ai_provider": "cli",
-    "openai_base_url": "",
-    "openai_api_key": "",
-    "openai_model": "",
-    "http_temperature": 0.2,
-    "http_max_tokens": 0,
-    # Graph enhancement: use graphify (Leiden clustering / surprising connections)
-    "use_graphify_enhancement": False,
-    # Optional named profiles: { "name": { "ai_provider", "openai_base_url", ... } }
-    "ai_profiles": {},
-    "active_ai_profile": "",
-}
-
-# ─── CLI type registry ───
-
-CLI_TYPES = {
-    "claude": {
-        "label": "Claude Code",
-        "default_binary": "claude",
-        "wrapper_prefix": "memex-claude-",
-        "env_file_prefix": "~/.claude-",
-    },
-    "claw": {
-        "label": "Claw Code",
-        "default_binary": "claw",
-        "wrapper_prefix": "memex-claw-",
-        "env_file_prefix": "~/.claw-",
-    },
-    "claude-ark": {
-        "label": "Claude Code (Ark Proxy)",
-        "default_binary": "claude-ark",
-        "wrapper_prefix": "memex-claude-ark-",
-        "env_file_prefix": "~/.claude-ark-",
-    },
-    "claw-anthropic-ark": {
-        "label": "Claw Code (Anthropic Ark Proxy)",
-        "default_binary": "claw-anthropic-ark",
-        "wrapper_prefix": "memex-claw-anthropic-ark-",
-        "env_file_prefix": "~/.claw-anthropic-ark-",
-    },
-}
 
 # OpenAI-compatible vendor presets (align with KnowledgeBuildAnalysis SetupPage AI_PRESETS)
 HTTP_PRESETS = [
@@ -104,53 +45,19 @@ HTTP_PRESETS = [
     {"id": "custom", "name": "Custom", "endpoint": "", "model": ""},
 ]
 
-AVAILABLE_MODELS = [
-    {"id": "claude-opus-4-7", "label": "Opus 4.7"},
-    {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6"},
-    {"id": "claude-haiku-4-5", "label": "Haiku 4.5"},
-    {"id": "default", "label": "Default"},
-]
-
-_ALLOWED_MODEL_IDS = {m["id"] for m in AVAILABLE_MODELS}
-project_registry.set_model_validator(lambda m: m in _ALLOWED_MODEL_IDS)
-
-
-def _load_settings():
-    merged = dict(_DEFAULT_SETTINGS)
-    if SETTINGS_FILE.exists():
-        try:
-            user = json.loads(SETTINGS_FILE.read_text("utf-8"))
-            merged.update(user)
-        except Exception:
-            pass
-    return merged
-
 
 def _save_settings(s):
     SETTINGS_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-SETTINGS = _load_settings()
+SETTINGS = llm_provider.load_settings()
 
+# Register model validator
+project_registry.set_model_validator(llm_provider.get_model_validator())
 
-def _apply_active_profile():
-    """If active_ai_profile is set and exists in ai_profiles, overlay those keys."""
-    name = (SETTINGS.get("active_ai_profile") or "").strip()
-    if not name:
-        return
-    prof = (SETTINGS.get("ai_profiles") or {}).get(name)
-    if not isinstance(prof, dict):
-        return
-    for k in (
-        "ai_provider", "openai_base_url", "openai_api_key", "openai_model",
-        "cli_type", "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra",
-        "http_temperature", "http_max_tokens",
-    ):
-        if k in prof and prof[k] is not None:
-            SETTINGS[k] = prof[k]
-
-
-_apply_active_profile()
+# Backward-compat aliases for dashboard UI code
+CLI_TYPES = llm_provider.CLI_TYPES
+AVAILABLE_MODELS = llm_provider.AVAILABLE_MODELS
 
 
 def _settings_for_response():
@@ -203,7 +110,7 @@ def _http_vendor_label() -> str:
 
 def _build_llm_ui() -> dict:
     """Provider identity for dashboard buttons and toolbar chip (no secrets)."""
-    http_ready = _openai_http_ready()
+    http_ready = llm_provider.http_ready(SETTINGS)
     ap = SETTINGS.get("ai_provider") or "cli"
     cli_short = _cli_display_short()
     http_short = ""
@@ -247,99 +154,12 @@ def _build_llm_ui() -> dict:
     }
 
 
-def _parse_cli_path_extra_dirs():
-    """Return list of existing directory paths for PATH prefix (validated)."""
-    raw = SETTINGS.get("cli_path_extra") or ""
-    if not isinstance(raw, str) or not raw.strip():
-        return []
-    tokens = []
-    for line in raw.replace("\r", "\n").split("\n"):
-        for seg in line.split(os.pathsep):
-            s = seg.strip()
-            if s:
-                tokens.append(s)
-    out = []
-    for p in tokens:
-        try:
-            cand = Path(p).expanduser()
-            if ".." in cand.parts:
-                continue
-            r = cand.resolve(strict=False)
-            if r.is_dir():
-                out.append(str(r))
-        except Exception:
-            continue
-    return out
+# Backward-compat: dashboard UI calls llm_provider.http_ready(SETTINGS) directly
+_openai_http_ready = llm_provider.http_ready
 
 
-def _effective_path_env_value():
-    """PATH string: extra dirs first, then os.environ PATH."""
-    extra = _parse_cli_path_extra_dirs()
-    base = os.environ.get("PATH", "")
-    if not extra:
-        return base
-    sep = os.pathsep
-    return sep.join(extra) + (sep + base if base else "")
-
-
-def _cli_subprocess_env():
-    """Copy of os.environ with PATH augmented when cli_path_extra is set."""
-    env = os.environ.copy()
-    ev = _effective_path_env_value()
-    if ev != os.environ.get("PATH", ""):
-        env["PATH"] = ev
-    return env
-
-
-def get_cli_executable():
-    """Resolved path or command name for the configured CLI (claude or claw)."""
-    cli_type = SETTINGS.get("cli_type") or "claude"
-    cli_info = CLI_TYPES.get(cli_type, CLI_TYPES["claude"])
-    default_bin = cli_info.get("default_binary", "claude")
-    name = os.path.expanduser((SETTINGS.get("claude_cli_binary") or default_bin).strip() or default_bin)
-    if os.path.isabs(name):
-        p = Path(name)
-        if p.is_file() and os.access(str(p), os.X_OK):
-            return str(p.resolve())
-        if p.is_file():
-            return str(p.resolve())
-    path_arg = _effective_path_env_value()
-    resolved = shutil.which(name, path=path_arg)
-    if resolved:
-        return resolved
-    return name
-
-
-# Backward compatibility alias
-get_claude_cli_executable = get_cli_executable
-
-
-def _parse_claude_extra_args():
-    """Optional JSON array of CLI flags — only tokens starting with -- (max 20)."""
-    raw = SETTINGS.get("claude_cli_extra_args")
-    if raw is None:
-        return []
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except Exception:
-            return []
-    if not isinstance(raw, list):
-        return []
-    out = []
-    for x in raw[:20]:
-        if isinstance(x, str) and x.startswith("--") and len(x) < 200:
-            out.append(x)
-    return out
-
-
-def _openai_http_ready():
-    if SETTINGS.get("ai_provider") != "openai_compatible":
-        return False
-    base = (SETTINGS.get("openai_base_url") or "").strip()
-    key = (SETTINGS.get("openai_api_key") or "").strip()
-    model = (SETTINGS.get("openai_model") or "").strip()
-    return bool(base and key and model)
+# Backward-compat aliases for CLI helpers used by run_claude_tracked / run_claude_streaming
+get_cli_executable = llm_provider.get_cli_executable
 
 
 _QUERY_RAG_TOP_K = 8
@@ -375,97 +195,30 @@ def _wiki_rel_for_project(proj, wiki_file_rel: str) -> str:
         return f"wiki/{wf}"
 
 
-def openai_chat_completion(messages, system=None, timeout=120):
-    """OpenAI-compatible POST /chat/completions (stdlib only). → (ok, text, err)."""
-    base = (SETTINGS.get("openai_base_url") or "").strip().rstrip("/")
-    key = (SETTINGS.get("openai_api_key") or "").strip()
-    model = (SETTINGS.get("openai_model") or "").strip()
-    if not base or not key or not model:
-        return (False, "", "OpenAI-compatible provider not fully configured (base URL, API key, model).")
-    url = base + "/chat/completions"
-    msg_list = []
-    if system:
-        msg_list.append({"role": "system", "content": system})
-    msg_list.extend(messages)
-    try:
-        temp = float(SETTINGS.get("http_temperature", 0.2))
-    except (TypeError, ValueError):
-        temp = 0.2
-    temp = max(0.0, min(2.0, temp))
-    try:
-        max_tok = int(SETTINGS.get("http_max_tokens") or 0)
-    except (TypeError, ValueError):
-        max_tok = 0
-    payload = {"model": model, "messages": msg_list, "temperature": temp}
-    if max_tok > 0:
-        payload["max_tokens"] = max_tok
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", "Bearer " + key)
-    try:
-        ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        choice = (body.get("choices") or [{}])[0]
-        msg = choice.get("message") or {}
-        text = msg.get("content") or ""
-        return (True, text[:32000], "")
-    except urllib.error.HTTPError as e:
-        try:
-            detail = e.read().decode("utf-8", errors="replace")[:400]
-        except Exception:
-            detail = str(e)
-        return (False, "", f"HTTP {e.code}: {detail}")
-    except Exception as e:
-        return (False, "", str(e)[:500])
-
-
-def run_claude_cli(prompt, timeout=None, cwd=None, project=None):
-    """Run Claude Code CLI subprocess (tools enabled). → (ok, output, error)."""
-    t = timeout or CLAUDE_TIMEOUT
-    target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
-    exe = get_claude_cli_executable()
-    cmd = (
-        [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
-        + _model_args_for(project)
-        + _parse_claude_extra_args()
-        + ["--output-format", "text", prompt]
-    )
-    try:
-        r = subprocess.run(
-            cmd,
-            capture_output=True, text=True, timeout=t,
-            cwd=target_cwd,
-            env=_cli_subprocess_env(),
-        )
-        err = r.stderr[:500] if r.returncode != 0 else ""
-        return (r.returncode == 0, r.stdout[:4000], err)
-    except subprocess.TimeoutExpired:
-        return (False, "", _timeout_hint())
-    except FileNotFoundError:
-        bin_name = SETTINGS.get("claude_cli_binary", "claude")
-        return (False, "", f"CLI not found: {bin_name}. Adjust claude_cli_binary or cli_path_extra (shell aliases are not visible); use an absolute path or a wrapper script.")
-
+# ─── Backward-compat: llm_provider-based replacements for old run_claude/openai_chat_completion ───
 
 def run_claude(prompt, timeout=None, cwd=None, project=None, force_cli=True):
-    """Run AI prompt: optional OpenAI-compatible HTTP when configured, else CLI.
-
-    force_cli=False enables HTTP completions for assistant/simple tasks when ai_provider is openai_compatible.
-    Tool-based flows (Ingest, Lint, …) must keep force_cli=True (default).
-    """
-    if not force_cli and _openai_http_ready():
-        ok, text, err = openai_chat_completion([{"role": "user", "content": prompt}], timeout=timeout or 120)
-        return (ok, text[:4000], err)
-    return run_claude_cli(prompt, timeout=timeout, cwd=cwd, project=project)
+    """Run AI prompt via unified llm_provider."""
+    return llm_provider.run(prompt, settings=SETTINGS, project=project, timeout=timeout, cwd=cwd, force_cli=force_cli)
 
 
-def _claude_model_args():
-    """현재 설정된 모델을 CLI 인자로 변환"""
-    model = SETTINGS.get("model", "default")
-    if not model or model == "default":
-        return []
-    return ["--model", model]
+def openai_chat_completion(messages, system=None, timeout=120):
+    """OpenAI-compatible chat via llm_provider."""
+    return llm_provider.run_http(messages, settings=SETTINGS, system=system, timeout=timeout)
+
+
+# Helpers for run_claude_tracked / run_claude_streaming (still CLI-only, stream-json)
+def _cli_subprocess_env():
+    return llm_provider._cli_subprocess_env(SETTINGS)
+
+
+def _parse_claude_extra_args():
+    return llm_provider._parse_claude_extra_args(SETTINGS)
+
+
+def _model_args_for(project=None):
+    return llm_provider._model_args_for(project, SETTINGS)
+
 
 RAW_ABS = os.path.abspath(str(RAW_DIR))
 
@@ -976,7 +729,7 @@ def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
             text=True, cwd=target_cwd, env=_cli_subprocess_env(),
         )
         start = time.monotonic()
-        heartbeat_interval = 10  # seconds between heartbeat events
+        heartbeat_interval = HEARTBEAT_INTERVAL
         last_activity_type = "starting"
         try:
             while True:
@@ -1959,8 +1712,12 @@ def _graph_shortest_path_api(proj, source, target):
     return {"ok": True, "path": path, "hops": len(path) - 1, "edges": path_edges}
 
 
-def _universe_shortest_path_api(source, target):
-    """BFS shortest path on the full universe graph (cross-project)."""
+def _universe_shortest_path_api(source=None, target=None, source_id=None, target_id=None):
+    """BFS shortest path on the full universe graph (cross-project).
+
+    Supports both ID-based (source_id/target_id) and label-based (source/target) lookups.
+    ID-based is preferred for exact matching across projects.
+    """
     from collections import deque
     universe_data = _build_universe_graph()
     nodes = universe_data["nodes"]
@@ -1975,13 +1732,31 @@ def _universe_shortest_path_api(source, target):
         node_lookup[n["label"].lower()] = nid
         # Also match by filename without project prefix
         node_lookup[n.get("filename", "").lower()] = nid
+        # Merged nodes: also match by original instance IDs
+        if n.get("merged") and "instances" in n:
+            for inst in n["instances"]:
+                inst_id = f"{inst['project']}/{inst['filename']}"
+                node_lookup[inst_id.lower()] = nid
 
-    src_id = node_lookup.get(source.lower())
-    tgt_id = node_lookup.get(target.lower())
-    if not src_id:
-        return {"ok": False, "error": f"source node not found: {source}"}
-    if not tgt_id:
-        return {"ok": False, "error": f"target node not found: {target}"}
+    # ID-based lookup (preferred)
+    if source_id and target_id:
+        src_id = node_lookup.get(source_id.lower())
+        tgt_id = node_lookup.get(target_id.lower())
+        if not src_id:
+            return {"ok": False, "error": f"source node not found: {source_id}"}
+        if not tgt_id:
+            return {"ok": False, "error": f"target node not found: {target_id}"}
+    elif source and target:
+        # Fallback: label-based lookup (legacy)
+        src_id = node_lookup.get(source.lower())
+        tgt_id = node_lookup.get(target.lower())
+        if not src_id:
+            return {"ok": False, "error": f"source node not found: {source}"}
+        if not tgt_id:
+            return {"ok": False, "error": f"target node not found: {target}"}
+    else:
+        return {"ok": False, "error": "missing source_id/target_id or source/target"}
+
     if src_id == tgt_id:
         return {"ok": True, "path": [src_id], "hops": 0, "edges": []}
 
@@ -1998,7 +1773,8 @@ def _universe_shortest_path_api(source, target):
             adj[s].append(t)
             adj[t].append(s)
 
-    # BFS
+    # BFS — skip system/* nodes as intermediate hops to avoid artificial
+    # connectivity through the global index/log hubs.
     visited = {src_id: None}
     queue = deque([src_id])
     while queue:
@@ -2006,12 +1782,14 @@ def _universe_shortest_path_api(source, target):
         if u == tgt_id:
             break
         for v in adj[u]:
-            if v not in visited:
+            if v not in visited and not v.startswith("system/"):
                 visited[v] = u
                 queue.append(v)
 
     if tgt_id not in visited:
-        return {"ok": False, "error": f"no path between '{source}' and '{target}'"}
+        src_label = source_id or source or src_id
+        tgt_label = target_id or target or tgt_id
+        return {"ok": False, "error": f"no path between '{src_label}' and '{tgt_label}'"}
 
     path = []
     cur = tgt_id
@@ -2022,6 +1800,93 @@ def _universe_shortest_path_api(source, target):
 
     path_edges = [{"source": path[i], "target": path[i + 1]} for i in range(len(path) - 1)]
     return {"ok": True, "path": path, "hops": len(path) - 1, "edges": path_edges}
+
+
+def _read_page_content_snippet(proj, filename: str, max_chars: int = 800) -> dict | None:
+    """Read a wiki page and return a content snippet."""
+    fp = proj.wiki_dir / filename
+    if not fp.exists():
+        return None
+    text = fp.read_text("utf-8")
+    meta, body = parse_fm(text)
+    return {
+        "filename": filename,
+        "title": meta.get("title", filename.replace(".md", "").replace("-", " ").title()),
+        "type": meta.get("type", "unknown"),
+        "tags": meta.get("tags", []),
+        "status": meta.get("status", "active"),
+        "confidence": meta.get("confidence", ""),
+        "snippet": body[:max_chars].strip(),
+        "word_count": len(body.split()),
+    }
+
+
+def _shortest_path_with_content_api(proj, source, target):
+    """Project-level shortest path with page content."""
+    path_result = _graph_shortest_path_api(proj, source, target)
+    if not path_result.get("ok"):
+        return path_result
+    content = []
+    for fn in path_result.get("path", []):
+        snippet = _read_page_content_snippet(proj, fn)
+        if snippet:
+            content.append(snippet)
+    path_result["content"] = content
+    return path_result
+
+
+def _universe_path_with_content_api(source_id=None, target_id=None, source=None, target=None):
+    """Universe-level shortest path with page content."""
+    path_result = _universe_shortest_path_api(
+        source_id=source_id, target_id=target_id, source=source, target=target
+    )
+    if not path_result.get("ok"):
+        return path_result
+    content = []
+    for nid in path_result.get("path", []):
+        if nid.startswith("system/"):
+            content.append({
+                "id": nid,
+                "title": nid.split("/")[1].title(),
+                "type": "system",
+                "snippet": "",
+                "word_count": 0,
+            })
+            continue
+        # Merged node: read content from all instances
+        if nid.startswith("title:"):
+            label = nid[6:]
+            universe_data = _build_universe_graph()
+            for n in universe_data["nodes"]:
+                if n.get("merged") and n["label"] == label:
+                    for inst in n.get("instances", []):
+                        try:
+                            proj = _resolve_project(inst["project"])
+                            snippet = _read_page_content_snippet(proj, inst["filename"])
+                            if snippet:
+                                snippet["id"] = nid
+                                snippet["project"] = inst["project"]
+                                snippet["instance_filename"] = inst["filename"]
+                                content.append(snippet)
+                        except Exception:
+                            pass
+                    break
+            continue
+        parts = nid.split("/", 1)
+        if len(parts) != 2:
+            continue
+        proj_slug, filename = parts
+        try:
+            proj = _resolve_project(proj_slug)
+            snippet = _read_page_content_snippet(proj, filename)
+            if snippet:
+                snippet["id"] = nid
+                snippet["project"] = proj_slug
+                content.append(snippet)
+        except Exception:
+            pass
+    path_result["content"] = content
+    return path_result
 
 
 def _graph_neighbors_api(proj, node_id):
@@ -2496,6 +2361,7 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
                         "to_project": nodes[j]["project"],
                         "similarity": 0.85,
                         "reason": "标题相同或高度相似",
+                        "_title_bridge": True,
                     })
 
     # Also check tag overlap
@@ -2529,12 +2395,89 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
     return bridges
 
 
+def _consolidate_same_title_nodes(nodes: list, edges: list) -> tuple:
+    """Group nodes by exact title (label) across projects.
+
+    When multiple projects share the same frontmatter title, merge them
+    into a single node with an ``instances`` array.  Edges are remapped
+    so that any edge whose both endpoints are merged gets deduplicated
+    at the merged-node level.
+    """
+    from collections import defaultdict as _dd
+
+    # 1. Group by exact label
+    label_map: dict[str, list] = _dd(list)
+    for n in nodes:
+        label_map[n["label"]].append(n)
+
+    # Mapping: original_id -> merged_id (or None if not merged)
+    id_to_merged: dict[str, str] = {}
+    merged_nodes: list[dict] = []
+    non_merged: list[dict] = []
+
+    for label, group in label_map.items():
+        projects = set(n["project"] for n in group)
+        if len(projects) >= 2:
+            # Multi-project → merge
+            merged_id = f"title:{label}"
+            merged_nodes.append({
+                "id": merged_id,
+                "label": label,
+                "type": group[0].get("type", "unknown"),
+                "merged": True,
+                "instances": [
+                    {
+                        "project": n["project"],
+                        "project_title": n.get("project_title", n["project"]),
+                        "filename": n["filename"],
+                        "type": n.get("type", "unknown"),
+                        "status": n.get("status", "active"),
+                        "confidence": n.get("confidence", ""),
+                        "tags": n.get("tags", []),
+                    }
+                    for n in group
+                ],
+                "tags": group[0].get("tags", []),
+                "status": group[0].get("status", "active"),
+                "confidence": group[0].get("confidence", ""),
+            })
+            for n in group:
+                id_to_merged[n["id"]] = merged_id
+        else:
+            non_merged.extend(group)
+
+    # 2. Remap edges
+    seen_pairs: set = set()
+    remapped_edges: list[dict] = []
+    for e in edges:
+        src = id_to_merged.get(e["source"], e["source"])
+        tgt = id_to_merged.get(e["target"], e["target"])
+        if src == tgt:
+            continue  # self-loop after merge → skip
+        pair_key = "|||".join(sorted([src, tgt]))
+        if pair_key in seen_pairs:
+            continue  # deduplicate
+        seen_pairs.add(pair_key)
+        remapped_edges.append({
+            "source": src,
+            "target": tgt,
+            "type": e.get("type", "wikilink"),
+            "project": e.get("project", ""),
+        })
+
+    all_nodes = merged_nodes + non_merged
+    return all_nodes, remapped_edges, id_to_merged
+
+
 def _build_universe_graph(include_hidden: bool = False) -> dict:
     """构建全项目统一图谱。
 
     System pages (index.md, log.md) are consolidated into two global hub
     nodes (system/index, system/log) to avoid artificial hub effects
     that inflate project-internal distances.
+
+    Cross-project nodes with the same frontmatter title are merged into
+    a single node with an ``instances`` array listing each project's copy.
     """
     config = _load_universe_config()
     excluded = set(config.get("excluded_projects", []))
@@ -2558,7 +2501,27 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
             "edge_count": len(edges),
         }
 
-    bridges = _detect_cross_project_bridges(all_nodes)
+    # Detect bridges on original nodes (before title consolidation)
+    pre_bridges = _detect_cross_project_bridges(all_nodes)
+
+    # Consolidate same-title nodes across projects
+    all_nodes, all_edges, _id_to_merged = _consolidate_same_title_nodes(
+        all_nodes, all_edges
+    )
+
+    # Remap bridge node IDs through consolidation mapping.
+    # Title bridges become self-loops (both ends map to same merged node) → drop.
+    # Tag-only bridges that still connect different nodes → keep.
+    bridges = []
+    for b in pre_bridges:
+        new_src = _id_to_merged.get(b["from_node"], b["from_node"])
+        new_tgt = _id_to_merged.get(b["to_node"], b["to_node"])
+        if new_src == new_tgt:
+            continue  # self-loop after consolidation
+        bridge = dict(b)
+        bridge["from_node"] = new_src
+        bridge["to_node"] = new_tgt
+        bridges.append(bridge)
 
     # Build global hub nodes for index.md and log.md
     sys_hubs = {
@@ -2579,7 +2542,8 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
     }
     all_node_ids = {n["id"] for n in all_nodes} | set(sys_hubs.keys())
 
-    # Remap edges that point to project-level index.md/log.md to system hubs
+    # Remap edges: project-level index.md/log.md → system hubs, then
+    # apply title-consolidation ID mapping.
     hub_map = {}
     for proj in project_registry.list_projects():
         if not include_hidden and proj.slug in excluded:
@@ -2587,25 +2551,41 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
         for sp in ("index.md", "log.md"):
             hub_map[f"{proj.slug}/{sp}"] = f"system/{sp}"
 
-    remapped_edges = []
+    final_edges = []
+    seen_pairs = set()
     for e in all_edges:
-        src = hub_map.get(e["source"], e["source"])
-        tgt = hub_map.get(e["target"], e["target"])
-        # Only keep edges where both endpoints exist
+        src = e["source"]
+        tgt = e["target"]
+        # Step 1: redirect to system hubs
+        if src in hub_map:
+            src = hub_map[src]
+        if tgt in hub_map:
+            tgt = hub_map[tgt]
+        # Step 2: apply title-consolidation ID mapping
+        src = _id_to_merged.get(src, src)
+        tgt = _id_to_merged.get(tgt, tgt)
+        if src == tgt:
+            continue  # self-loop
+        pair_key = "|||".join(sorted([src, tgt]))
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
         if src in all_node_ids and tgt in all_node_ids:
             new_edge = dict(e)
             new_edge["source"] = src
             new_edge["target"] = tgt
-            remapped_edges.append(new_edge)
+            final_edges.append(new_edge)
 
-    all_edges = remapped_edges
+    all_edges = final_edges
     all_nodes.extend(sys_hubs.values())
 
+    merged_count = sum(1 for n in all_nodes if n.get("merged"))
     return {
         "universe": {
             "total_nodes": len(all_nodes),
             "total_edges": len(all_edges),
             "projects": project_info,
+            "merged_nodes": merged_count,
         },
         "nodes": all_nodes,
         "edges": all_edges,
@@ -5072,11 +5052,34 @@ class Handler(SimpleHTTPRequestHandler):
                 })
 
             if path == "/api/graph/universe-shortest-path":
+                src_id = (qs.get("source_id", [""])[0] or "").strip()
+                tgt_id = (qs.get("target_id", [""])[0] or "").strip()
+                src = (qs.get("source", [""])[0] or "").strip()
+                tgt = (qs.get("target", [""])[0] or "").strip()
+                if not src_id and not src:
+                    return self._json({"ok": False, "error": "Missing source_id or source"})
+                if not tgt_id and not tgt:
+                    return self._json({"ok": False, "error": "Missing target_id or target"})
+                return self._json(_universe_shortest_path_api(source=src or None, target=tgt or None, source_id=src_id or None, target_id=tgt_id or None))
+
+            if path == "/api/graph/shortest-path-with-content":
+                proj = _resolve_project(q_project)
                 src = (qs.get("source", [""])[0] or "").strip()
                 tgt = (qs.get("target", [""])[0] or "").strip()
                 if not src or not tgt:
                     return self._json({"ok": False, "error": "Missing source or target"})
-                return self._json(_universe_shortest_path_api(src, tgt))
+                return self._json(_shortest_path_with_content_api(proj, src, tgt))
+
+            if path == "/api/graph/universe-shortest-path-with-content":
+                src_id = (qs.get("source_id", [""])[0] or "").strip()
+                tgt_id = (qs.get("target_id", [""])[0] or "").strip()
+                src = (qs.get("source", [""])[0] or "").strip()
+                tgt = (qs.get("target", [""])[0] or "").strip()
+                if not src_id and not src:
+                    return self._json({"ok": False, "error": "Missing source_id or source"})
+                if not tgt_id and not tgt:
+                    return self._json({"ok": False, "error": "Missing target_id or target"})
+                return self._json(_universe_path_with_content_api(source=src or None, target=tgt or None, source_id=src_id or None, target_id=tgt_id or None))
 
             if path == "/api/graph/bridges":
                 min_sim = float(qs.get("min_similarity", ["0.3"])[0])
@@ -5187,7 +5190,7 @@ class Handler(SimpleHTTPRequestHandler):
                         pass
                 return self._json({"last_date": last, "days_ago": days_ago})
             if path == "/api/schedules":
-                schedules = SETTINGS.get("schedules", [])
+                schedules = _sched_load()[0]
                 return self._json({"ok": True, "schedules": schedules})
             # API 경로인데 매칭 안 됨
             if path.startswith("/api/"):
@@ -5273,6 +5276,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(do_compare(body.get("page_a", ""), body.get("page_b", ""), body.get("save_as", ""), project_slug=p_slug))
             if path == "/api/review/refresh":
                 return self._json(do_review_refresh(body.get("filename", ""), project_slug=p_slug))
+            if path == "/api/git/commit":
+                msg = (body.get("message") or "").strip()
+                if not msg:
+                    return self._json({"ok": False, "error": "commit message required"})
+                proj = _resolve_project(p_slug)
+                hash_val = git_mgr.commit_generic(msg, project=proj)
+                return self._json({"ok": True, "commit_hash": hash_val, "project": proj.slug})
             # ─── SSE Streaming Endpoints ───
             if path == "/api/lint/stream":
                 return _handle_stream(self, stream_lint(project_slug=p_slug))
@@ -5375,7 +5385,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if not sched.get("id"):
                     import hashlib
                     sched["id"] = hashlib.md5(sched.get("name", "").encode()).hexdigest()[:8]
-                schedules = SETTINGS.get("schedules", [])
+                schedules = _sched_load()[0]
                 # Update if exists
                 updated = False
                 for i, s in enumerate(schedules):
@@ -5385,21 +5395,20 @@ class Handler(SimpleHTTPRequestHandler):
                         break
                 if not updated:
                     schedules.append(sched)
-                SETTINGS["schedules"] = schedules
-                _save_settings(SETTINGS)
+                _save_sched_files(schedules)
                 return self._json({"ok": True, "schedule": sched})
 
             if path.startswith("/api/schedules/") and self.command == "DELETE":
                 sched_id = path.split("/api/schedules/")[-1].split("/")[0]
-                schedules = SETTINGS.get("schedules", [])
-                SETTINGS["schedules"] = [s for s in schedules if s.get("id") != sched_id]
-                _save_settings(SETTINGS)
+                schedules = _sched_load()[0]
+                schedules = [s for s in schedules if s.get("id") != sched_id]
+                _save_sched_files(schedules)
                 return self._json({"ok": True})
 
             if path.startswith("/api/schedules/") and path.endswith("/run"):
                 parts = path.split("/")
                 sched_id = parts[-2]
-                schedules = SETTINGS.get("schedules", [])
+                schedules = _sched_load()[0]
                 sched = next((s for s in schedules if s.get("id") == sched_id), None)
                 if not sched:
                     return self._json({"ok": False, "error": "schedule not found"}, code=404)
@@ -5413,13 +5422,12 @@ class Handler(SimpleHTTPRequestHandler):
             if path.startswith("/api/schedules/") and path.endswith("/toggle"):
                 parts = path.split("/")
                 sched_id = parts[-2]
-                schedules = SETTINGS.get("schedules", [])
+                schedules = _sched_load()[0]
                 for s in schedules:
                     if s.get("id") == sched_id:
                         s["enabled"] = not s.get("enabled", False)
                         break
-                SETTINGS["schedules"] = schedules
-                _save_settings(SETTINGS)
+                _save_sched_files(schedules)
                 return self._json({"ok": True})
 
             if path == "/api/projects/create":

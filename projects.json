@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "askdata-platform",
+  "active": "行业标准",
   "projects": [
     {
       "slug": "个人文档中心",
@@ -17,7 +17,7 @@
       "description": "Free-Style-Report / AskData 平台的架构、模块、技术栈知识管理",
       "model": "default",
       "created": "2026-05-02",
-      "last_used": "2026-05-14",
+      "last_used": "2026-05-29",
       "template": "llm-research"
     },
     {
@@ -44,7 +44,7 @@
       "description": "专门用来进行行业分类标准的知识维护",
       "model": "default",
       "created": "2026-05-04",
-      "last_used": "2026-05-14",
+      "last_used": "2026-06-11",
       "template": "llm-research"
     },
     {
@@ -53,7 +53,7 @@
       "description": "平安产险各机构杂费付款审批、金科服务手册、支付指引等风控合规文档的知识管理",
       "model": "default",
       "created": "2026-05-13",
-      "last_used": "2026-05-13",
+      "last_used": "2026-05-29",
       "template": ""
     }
   ]

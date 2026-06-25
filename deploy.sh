@@ -26,7 +26,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 COMPOSE="docker compose -f docker-compose.yml"
 ENV_FILE="${MEMEX_ENV_FILE:-$(pwd)/.env}"
-MEMEX_DEFAULT_PORT=80
+MEMEX_DEFAULT_PORT=3011
 
 # ── Colors & formatting ──────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -533,7 +533,7 @@ memex-deploy.sh — 一键部署管理脚本
   env KEY             查看单个变量值
 
 通用选项:
-  --port PORT         指定对外端口（默认 80）
+  --port PORT         指定对外端口（默认 3011）
   --only-backend      仅启动后端（不启动 Nginx）
   --only-web          仅启动 Nginx（依赖已有运行的后端）
 

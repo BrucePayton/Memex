@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -30,149 +29,7 @@ if str(DASHBOARD_DIR) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(DASHBOARD_DIR))
 
 import project_registry  # noqa: E402
-
-# ─── CLI type registry (mirrors server.py) ───────────────────────────────────
-
-CLI_TYPES = {
-    "claude": {
-        "label": "Claude Code",
-        "default_binary": "claude",
-        "wrapper_prefix": "memex-claude-",
-        "env_file_prefix": "~/.claude-",
-    },
-    "claw": {
-        "label": "Claw Code",
-        "default_binary": "claw",
-        "wrapper_prefix": "memex-claw-",
-        "env_file_prefix": "~/.claw-",
-    },
-    "claude-ark": {
-        "label": "Claude Code (Ark Proxy)",
-        "default_binary": "claude-ark",
-        "wrapper_prefix": "memex-claude-ark-",
-        "env_file_prefix": "~/.claude-ark-",
-    },
-    "claw-anthropic-ark": {
-        "label": "Claw Code (Anthropic Ark Proxy)",
-        "default_binary": "claw-anthropic-ark",
-        "wrapper_prefix": "memex-claw-anthropic-ark-",
-        "env_file_prefix": "~/.claw-anthropic-ark-",
-    },
-}
-
-SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
-_DEFAULT_SETTINGS = {
-    "cli_type": "claude",
-    "claude_cli_binary": "claude",
-    "claude_cli_extra_args": [],
-    "cli_path_extra": "",
-    "model": "default",
-}
-
-AVAILABLE_MODELS = [
-    {"id": "claude-opus-4-7", "label": "Opus 4.7"},
-    {"id": "claude-sonnet-4-6", "label": "Sonnet 4.6"},
-    {"id": "claude-haiku-4-5", "label": "Haiku 4.5"},
-    {"id": "default", "label": "Default"},
-]
-_ALLOWED_MODEL_IDS = {m["id"] for m in AVAILABLE_MODELS}
-
-
-def _load_settings() -> dict:
-    merged = dict(_DEFAULT_SETTINGS)
-    if SETTINGS_FILE.exists():
-        try:
-            user = json.loads(SETTINGS_FILE.read_text("utf-8"))
-            merged.update(user)
-        except Exception:
-            pass
-    return merged
-
-
-def _effective_path_env_value(settings: dict | None = None) -> str:
-    if settings is None:
-        settings = _load_settings()
-    raw = settings.get("cli_path_extra") or ""
-    if not isinstance(raw, str) or not raw.strip():
-        return os.environ.get("PATH", "")
-    tokens = []
-    for line in raw.replace("\r", "\n").split("\n"):
-        for seg in line.split(os.pathsep):
-            s = seg.strip()
-            if s:
-                tokens.append(s)
-    out = []
-    for p in tokens:
-        try:
-            cand = Path(p).expanduser()
-            if ".." in cand.parts:
-                continue
-            r = cand.resolve(strict=False)
-            if r.is_dir():
-                out.append(str(r))
-        except Exception:
-            continue
-    base = os.environ.get("PATH", "")
-    return os.pathsep.join(out) + (os.pathsep + base if base else "")
-
-
-def _cli_subprocess_env(settings: dict | None = None) -> dict[str, str]:
-    env = os.environ.copy()
-    ev = _effective_path_env_value(settings)
-    if ev != os.environ.get("PATH", ""):
-        env["PATH"] = ev
-    return env
-
-
-def _parse_claude_extra_args(settings: dict | None = None) -> list[str]:
-    if settings is None:
-        settings = _load_settings()
-    raw = settings.get("claude_cli_extra_args")
-    if raw is None:
-        return []
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except Exception:
-            return []
-    if not isinstance(raw, list):
-        return []
-    out = []
-    for x in raw[:20]:
-        if isinstance(x, str) and x.startswith("--") and len(x) < 200:
-            out.append(x)
-    return out
-
-
-def _model_args_for(project=None, settings: dict | None = None) -> list[str]:
-    if settings is None:
-        settings = _load_settings()
-    model = settings.get("model", "default")
-    if not model or model == "default":
-        return []
-    if model not in _ALLOWED_MODEL_IDS:
-        return []
-    return ["--model", model]
-
-
-def get_cli_executable(settings: dict | None = None) -> str:
-    if settings is None:
-        settings = _load_settings()
-    cli_type = settings.get("cli_type") or "claude"
-    cli_info = CLI_TYPES.get(cli_type, CLI_TYPES["claude"])
-    default_bin = cli_info.get("default_binary", "claude")
-    name = os.path.expanduser((settings.get("claude_cli_binary") or default_bin).strip() or default_bin)
-    if os.path.isabs(name):
-        p = Path(name)
-        if p.is_file() and os.access(str(p), os.X_OK):
-            return str(p.resolve())
-        if p.is_file():
-            return str(p.resolve())
-    path_arg = _effective_path_env_value(settings)
-    resolved = shutil.which(name, path=path_arg)
-    if resolved:
-        return resolved
-    return name
+import llm_provider  # noqa: E402
 
 
 def _resolve(project: str | None) -> project_registry.Project:
@@ -400,9 +257,6 @@ Today: {today}"""
 
 # ─── CLI execution ───────────────────────────────────────────────────────────
 
-CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "600"))
-CLAUDE_TOOLS = os.environ.get("CLAUDE_TOOLS", "Edit,Write,Read,Glob,Grep")
-
 
 def run_wiki_operation(
     prompt: str,
@@ -410,36 +264,20 @@ def run_wiki_operation(
     timeout: int | None = None,
     settings: dict | None = None,
 ) -> tuple[bool, str, str]:
-    """Run a wiki operation via CLI subprocess.
+    """Run a wiki operation via unified LLM provider (CLI by default for tool-based ops).
 
     Returns (ok, stdout, stderr).
     """
     if settings is None:
-        settings = _load_settings()
+        settings = llm_provider.load_settings()
     proj = _resolve(project)
-    t = timeout or CLAUDE_TIMEOUT
-    target_cwd = str(proj.root if proj else PROJECT_ROOT)
-    exe = get_cli_executable(settings)
-    cmd = (
-        [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
-        + _model_args_for(proj, settings)
-        + _parse_claude_extra_args(settings)
-        + ["--output-format", "text", prompt]
+    return llm_provider.run(
+        prompt=prompt,
+        settings=settings,
+        project=proj,
+        timeout=timeout,
+        force_cli=True,  # wiki ops always need tool use
     )
-    try:
-        r = subprocess.run(
-            cmd,
-            capture_output=True, text=True, timeout=t,
-            cwd=target_cwd,
-            env=_cli_subprocess_env(settings),
-        )
-        err = r.stderr[:500] if r.returncode != 0 else ""
-        return (r.returncode == 0, r.stdout[:8000], err)
-    except subprocess.TimeoutExpired:
-        return (False, "", f"CLI timed out after {t}s")
-    except FileNotFoundError:
-        bin_name = settings.get("claude_cli_binary", "claude")
-        return (False, "", f"CLI not found: {bin_name}")
 
 
 # ─── helper: git operations (minimal, no GitManager dependency) ──────────────
