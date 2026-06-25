@@ -31,7 +31,5 @@ docs/.venv/
 .cursor/
 
 
-# projects — only ignore trash/obsidian/cache
-projects/.trash/
-projects/**/.obsidian/
-projects/**/__pycache__/
+# projects — content managed externally, only registry tracked
+projects/
