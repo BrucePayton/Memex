@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active": "个人开发备注日记",
+  "active": "shenzhen-emergency-plans",
   "projects": [
     {
       "slug": "个人文档中心",
@@ -53,6 +53,15 @@
       "description": "平安产险各机构杂费付款审批、金科服务手册、支付指引等风控合规文档的知识管理",
       "model": "default",
       "created": "2026-05-13",
+      "last_used": "2026-07-01",
+      "template": ""
+    },
+    {
+      "slug": "shenzhen-emergency-plans",
+      "title": "深圳应急预案知识库",
+      "description": "深圳市各类应急预案文档的知识管理库，涵盖自然灾害、公共卫生、社会安全、事故灾难四大类30份预案的结构化wiki卡片，建立双向索引和跨模块关联",
+      "model": "default",
+      "created": "2026-07-01",
       "last_used": "2026-07-01",
       "template": ""
     }
