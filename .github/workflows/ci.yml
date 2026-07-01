@@ -1,0 +1,113 @@
+name: ci
+
+# Fast correctness gate on every push/PR to main: lint, typecheck, and the full
+# Rust + frontend test suites. The heavy installer build stays in release.yml
+# (tag-only). Without this, the 64 Rust tests and the frontend suite never ran
+# automatically and a broken test could merge unnoticed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Supersede in-flight runs on the same ref so a quick succession of pushes does
+# not pile up CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npx tsc -b
+      - name: unit tests
+        run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: format check
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: tests
+        run: cargo test
+
+  # Dependency-advisory alarm: surfaces a RUSTSEC / npm advisory against any
+  # (transitive) dependency — e.g. the PDF/spreadsheet parsers (lopdf, zip,
+  # quick-xml) or reqwest — instead of relying on a manual lockfile bump. Runs
+  # as its own job so an advisory shows up without blocking the test gate.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit (Rust advisories)
+        working-directory: app/src-tauri
+        # RUSTSEC-2026-0187 (lopdf stack overflow via deeply nested PDF objects)
+        # is mitigated architecturally: PDF parsing runs in an isolated child
+        # process (extract.rs `extract_text_isolated`), so a parser stack
+        # overflow crashes only that child and returns a clean error — it cannot
+        # take down the app. pdf-extract 0.10.0 pins lopdf ^0.38, so the crate
+        # can't be bumped until a newer pdf-extract ships; remove this ignore then.
+        run: cargo audit --ignore RUSTSEC-2026-0187
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # Only the SHIPPED (production) dependencies gate the build; dev-only
+      # build-toolchain advisories are tracked by Dependabot instead of blocking
+      # the alarm on tooling that never reaches a user.
+      - name: npm audit (shipped JS advisories)
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+
+  # Compiles + runs the cfg(windows) CLI-resolution code and tests, which never
+  # build on Linux. webview2 is preinstalled on windows-latest.
+  rust-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: tests
+        run: cargo test
