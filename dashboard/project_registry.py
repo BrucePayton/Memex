@@ -90,18 +90,7 @@ def _save_registry(reg: dict) -> None:
     )
 
 
-# ─── slug ───
-
-def make_slug(title: str) -> str:
-    """Mirror of server.make_slug — duplicated to avoid circular import."""
-    s = (title or "").strip().lower()
-    s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
-    s = re.sub(r"[\s_]+", "-", s)
-    s = re.sub(r"-+", "-", s).strip("-")
-    if not s:
-        s = f"untitled-{int(time.time())}"
-    return s
-
+from dashboard.models import make_slug
 
 # ─── 프로젝트 설정 파일 (model 등) ───
 

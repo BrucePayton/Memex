@@ -323,55 +323,12 @@ def _git_commit(message: str, proj) -> dict:
     return {"ok": True, "hash": log.stdout.strip(), "files": files}
 
 
-# ─── slug + link helpers ─────────────────────────────────────────────────────
+# ─── slug + link helpers (imported from shared dashboard.models) ──────────────────
 
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
-
-
-def make_slug(title: str) -> str:
-    s = (title or "").strip().lower()
-    s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
-    s = re.sub(r"[\s_]+", "-", s)
-    s = re.sub(r"-+", "-", s).strip("-")
-    if not s:
-        s = f"untitled-{int(time.time())}"
-    return s
-
-
-def extract_links(body: str) -> list[str]:
-    return sorted({
-        m.group(1).strip() + (".md" if not m.group(1).strip().endswith(".md") else "")
-        for m in WIKILINK_RE.finditer(body)
-    })
-
-
-def parse_fm(text: str) -> tuple[dict, str]:
-    meta: dict[str, Any] = {}
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return meta, text
-    body = text[m.end():]
-    raw = m.group(1)
-    for ml in re.finditer(r"^(\w+):\s*\n((?:\s+-\s+.+\n?)+)", raw, re.MULTILINE):
-        meta[ml.group(1)] = [
-            x.strip().strip("'\"") for x in re.findall(r"-\s+(.+)", ml.group(2))
-        ]
-    for line in raw.strip().split("\n"):
-        if ":" not in line or line.startswith("  "):
-            continue
-        k, v = line.split(":", 1)
-        k, v = k.strip(), v.strip()
-        if k in meta:
-            continue
-        lm = re.search(r"\[(.*?)\]", v)
-        if lm:
-            meta[k] = [x.strip().strip("'\"") for x in lm.group(1).split(",") if x.strip()]
-        elif v:
-            meta[k] = v.strip("'\"")
-    return meta, body
-
-
+from dashboard.models import (
+    make_slug, parse_fm, extract_links, extract_citations,
+    FRONTMATTER_RE, WIKILINK_RE, resolve_wikilink_target,
+)
 # ─── detect_new_sources ─────────────────────────────────────────────────────
 
 
@@ -478,14 +435,13 @@ def validate_links(project: str = "") -> dict:
         slug_map[fn.replace("/", "_").lower()] = fn
         slug_map[fn.lower().replace(".md", "")] = fn
 
-    wikilink_re = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
     citation_re = re.compile(r"\[\^src-[a-zA-Z0-9_-]+\]")
 
     total_claims = 0
     cited_claims = 0
     for fn, info in pages.items():
         content = info["content"]
-        matches = wikilink_re.findall(content)
+        matches = WIKILINK_RE.findall(content)
         for target in matches:
             target_lower = target.strip().lower()
             target_slug = target_lower.replace(" ", "-")
@@ -495,11 +451,10 @@ def validate_links(project: str = "") -> dict:
             elif target_slug in slug_map:
                 matched = True
             if not matched:
-                for known in known_filenames:
-                    known_slug = known.split("/")[-1].replace("-", " ").replace(".md", "").lower()
-                    if target_slug[:4] in known_slug or known_slug[:4] in target_slug:
-                        matched = True
-                        break
+                resolved = resolve_wikilink_target(
+                    target_slug, known_filenames, title_hint=info.get("title", ""))
+                if resolved:
+                    matched = True
             if not matched:
                 issues["broken_links"].append({
                     "from_page": fn,

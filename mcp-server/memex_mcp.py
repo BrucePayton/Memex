@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+from collections import defaultdict, deque
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -36,6 +37,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 if str(DASHBOARD_DIR) not in sys.path:
     sys.path.insert(0, str(DASHBOARD_DIR))
 
@@ -78,48 +81,17 @@ mcp = FastMCP(
     ),
 )
 
-# ─── small helpers (duplicated from server.py to keep this server lean) ──────
+# ─── small helpers (now imported from shared dashboard.models) ──────
 
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+from dashboard.models import (
+    FRONTMATTER_RE, WIKILINK_RE, parse_fm, extract_links, extract_citations,
+    make_slug, is_system_page, SYSTEM_PAGES,
+)
+
 WORD_RE = re.compile(r"[\w가-힣]+")
 
 
-def parse_fm(text: str) -> tuple[dict, str]:
-    """Parse YAML-ish frontmatter, returning (meta, body).
-
-    Mirrors `dashboard/server.py:parse_fm`. Supports scalar and list values.
-    """
-    meta: dict[str, Any] = {}
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return meta, text
-    body = text[m.end():]
-    raw = m.group(1)
-    for ml in re.finditer(r"^(\w+):\s*\n((?:\s+-\s+.+\n?)+)", raw, re.MULTILINE):
-        meta[ml.group(1)] = [
-            x.strip().strip("'\"") for x in re.findall(r"-\s+(.+)", ml.group(2))
-        ]
-    for line in raw.strip().split("\n"):
-        if ":" not in line or line.startswith("  "):
-            continue
-        k, v = line.split(":", 1)
-        k, v = k.strip(), v.strip()
-        if k in meta:
-            continue
-        lm = re.search(r"\[(.*?)\]", v)
-        if lm:
-            meta[k] = [x.strip().strip("'\"") for x in lm.group(1).split(",") if x.strip()]
-        elif v:
-            meta[k] = v.strip("'\"")
-    return meta, body
-
-
-def extract_links(body: str) -> list[str]:
-    return sorted({
-        m.group(1).strip() + (".md" if not m.group(1).strip().endswith(".md") else "")
-        for m in WIKILINK_RE.finditer(body)
-    })
+# parse_fm, extract_links now imported from dashboard.models above
 
 
 def _resolve(project: str | None) -> "project_registry.Project":
@@ -857,7 +829,6 @@ def _load_persisted_graph(proj):
     if not graph_file.exists():
         return None
 
-    import json
     try:
         data = json.loads(graph_file.read_text(encoding="utf-8"))
         if labels_file.exists():
@@ -868,7 +839,6 @@ def _load_persisted_graph(proj):
 
 def _persist_graph(proj, graph_data):
     """Persist graph data to .graph directory."""
-    import json
     graph_dir = _get_graph_dir(proj)
 
     # Save main graph
@@ -882,73 +852,25 @@ def _persist_graph(proj, graph_data):
 
 
 def _build_wiki_graph(proj) -> tuple[list[dict], list[dict]]:
-    """Scan wiki/ and build a simple {nodes, edges} graph from wikilinks."""
-    import os as _os
-    nodes: list[dict] = []
-    edges: list[dict] = []
-    sys_pages = {"index.md", "log.md", "overview.md"}
-    id_to_info: dict[str, dict] = {}
+    """Scan wiki/ and build a simple {nodes, edges} graph from wikilinks.
 
-    if proj.wiki_dir.exists():
-        for md in proj.wiki_dir.rglob("*.md"):
-            rel = str(md.relative_to(proj.wiki_dir))
-            text = md.read_text("utf-8")
-            meta, body = parse_fm(text)
-            pt = meta.get("type", "unknown")
-            title = meta.get("title", md.stem.replace("-", " ").title())
-            id_to_info[rel] = {
-                "id": rel, "label": title, "type": pt,
-                "word_count": len(body.split()), "tags": meta.get("tags", []),
-            }
-            links = extract_links(body)
-            for lnk in links:
-                edges.append({"from": rel, "to": lnk})
+    Delegates to shared dashboard.graph.builder to avoid code duplication.
+    """
+    from dashboard.graph.builder import build_graph_data
 
-    # Build basename → [all matching ids] lookup for resolving bare wikilinks
-    basename_candidates: dict[str, list[str]] = {}
-    for fid in id_to_info:
-        fn = _os.path.basename(fid)
-        stem = fid.replace('.md', '')
-        if fn not in basename_candidates:
-            basename_candidates[fn] = []
-        basename_candidates[fn].append(fid)
-        if stem not in basename_candidates:
-            basename_candidates[stem] = []
-        basename_candidates[stem].append(fid)
+    nodes, edges, _node_map = build_graph_data(proj.wiki_dir, proj.raw_dir)
 
-    def _resolve(target):
-        clean = target.split("#", 1)[0]
-        if clean in id_to_info:
-            return clean
-        cands = basename_candidates.get(clean) or basename_candidates.get(_os.path.basename(clean))
-        if not cands:
-            return None
-        if len(cands) == 1:
-            return cands[0]
-        # Collision: prefer by label similarity
-        hint = clean.lower().replace("-"," ").replace("_"," ")
-        best = None; best_score = -1
-        for c in cands:
-            ct = id_to_info[c]["label"].lower().replace("-"," ").replace("_"," ")
-            hw = set(hint.split()); cw = set(ct.split())
-            score = len(hw & cw)
-            if score > best_score:
-                best_score = score; best = c
-        return best or cands[0]
+    # Convert to the format expected by MCP graph tools:
+    # nodes: [{id, label, type, word_count, tags}]
+    # edges: [{from, to}]
+    graph_nodes = [
+        {"id": n["filename"], "label": n["title"], "type": n["type"],
+         "word_count": n.get("word_count", 0), "tags": n.get("tags", [])}
+        for n in nodes
+    ]
+    graph_edges = [{"from": e["from"], "to": e["to"]} for e in edges]
 
-    # Resolve edge targets using basename lookup
-    for e in edges:
-        resolved = _resolve(e["to"])
-        if resolved:
-            e["to"] = resolved
-        elif e["to"] not in id_to_info:
-            # Stub node for unresolved targets
-            stem = e["to"].replace(".md", "").replace("-", " ").title()
-            id_to_info[e["to"]] = {"id": e["to"], "label": stem, "type": "missing",
-                                   "word_count": 0, "tags": []}
-
-    nodes = list(id_to_info.values())
-    return nodes, edges
+    return graph_nodes, graph_edges
 
 
 # ─── graph tools (HTTP async calls to dashboard API) ─────────────────────────
@@ -959,99 +881,121 @@ async def graph_build(project: str = "") -> dict:
     """Build a knowledge graph from wiki pages.
 
     Scans wiki/ directory, parses wikilinks [[...]], and returns nodes + edges.
-    Nodes have: id, label, type, word_count, tags.
-    Edges have: from, to, type.
+    Uses shared graph/builder.py directly — no HTTP dependency on Dashboard.
     """
-    params = {}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/build", params=params)
+    from dashboard.graph.builder import build_graph_data
+    proj = _resolve(project)
+    nodes, edges, _node_map = build_graph_data(proj.wiki_dir, proj.raw_dir)
+    return {
+        "project": proj.slug,
+        "nodes": [{"id": n["filename"], "label": n["title"], "type": n["type"],
+                   "word_count": n.get("word_count", 0), "tags": n.get("tags", [])} for n in nodes],
+        "edges": edges,
+    }
 
 
 @mcp.tool()
 async def graph_community(project: str = "") -> dict:
-    """Detect communities in the wiki graph using connected components.
-
-    Returns communities (connected components), cohesion scores, and
-    splits large communities via greedy local-density clustering.
-    """
-    params = {}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/community", params=params)
+    """Detect communities in the wiki graph using connected components."""
+    from dashboard.graph.community import detect_communities
+    proj = _resolve(project)
+    result = detect_communities(proj.wiki_dir)
+    result["project"] = proj.slug
+    return result
 
 
 @mcp.tool()
 async def graph_god_nodes(project: str = "", top_n: int = 10) -> dict:
-    """Return the most-connected wiki pages (highest degree).
-
-    Excludes system pages (index.md, log.md, overview.md).
-    """
-    params = {}
-    if project:
-        params["project"] = project
-    if top_n:
-        params["top_n"] = str(top_n)
-    return await _api_call("/api/graph/god-nodes", params=params)
+    """Return the most-connected wiki pages (highest degree)."""
+    from dashboard.graph.paths import god_nodes
+    proj = _resolve(project)
+    result = god_nodes(proj.wiki_dir, top_n)
+    result["project"] = proj.slug
+    return result
 
 
 @mcp.tool()
 async def graph_stats(project: str = "") -> dict:
-    """Return graph summary statistics.
-
-    Node count, edge count, community count, type distribution,
-    isolated pages, average degree, graph density.
-    """
-    params = {}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/stats", params=params)
+    """Return graph summary statistics (node/edge counts, density, etc.)."""
+    from dashboard.graph.builder import build_graph_data
+    proj = _resolve(project)
+    nodes, edges, _ = build_graph_data(proj.wiki_dir, proj.raw_dir)
+    sys_pages = SYSTEM_PAGES
+    type_counts = {}
+    for n in nodes:
+        type_counts[n.get("type", "unknown")] = type_counts.get(n.get("type", "unknown"), 0) + 1
+    degree = {n["filename"]: 0 for n in nodes if n["filename"] not in sys_pages}
+    for e in edges:
+        if e["from"] in degree: degree[e["from"]] += 1
+        if e["to"] in degree: degree[e["to"]] += 1
+    n_real = len(degree)
+    avg_degree = round(sum(degree.values()) / n_real, 2) if n_real > 0 else 0
+    max_possible = n_real * (n_real - 1) / 2 if n_real > 1 else 1
+    density = round(len(edges) / max_possible, 4) if max_possible > 0 else 0
+    isolated = sum(1 for d in degree.values() if d == 0)
+    return {
+        "project": proj.slug, "node_count": len(nodes), "edge_count": len(edges),
+        "real_nodes": n_real, "type_counts": type_counts, "isolated_pages": isolated,
+        "avg_degree": avg_degree, "density": density,
+    }
 
 
 @mcp.tool()
 async def graph_shortest_path(source: str, target: str, project: str = "") -> dict:
-    """Find the shortest path between two wiki pages (BFS).
-
-    source and target can be filenames or page titles.
-    """
-    params = {"source": source, "target": target}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/shortest-path", params=params)
+    """Find the shortest path between two wiki pages (BFS)."""
+    from dashboard.graph.paths import shortest_path
+    proj = _resolve(project)
+    return shortest_path(proj.wiki_dir, source, target)
 
 
 @mcp.tool()
 async def graph_neighbors(node_id: str, project: str = "") -> dict:
-    """Return direct neighbors of a wiki page node.
-
-    node_id can be a filename or page title.
-    """
-    params = {"node_id": node_id}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/neighbors", params=params)
+    """Return direct neighbors of a wiki page node."""
+    from dashboard.graph.paths import neighbors as graph_neighbors_fn
+    proj = _resolve(project)
+    return graph_neighbors_fn(proj.wiki_dir, node_id)
 
 
 @mcp.tool()
 async def graph_insights(project: str = "") -> dict:
     """Discover interesting patterns in the wiki graph.
 
-    Cross-type connections, bridge pages, isolated pages, and
-    low-cohesion communities.
+    Cross-type connections, bridge pages, isolated pages.
     """
-    params = {}
-    if project:
-        params["project"] = project
-    return await _api_call("/api/graph/insights", params=params)
+    from dashboard.graph.builder import build_graph_data
+    proj = _resolve(project)
+    nodes, edges, node_map = build_graph_data(proj.wiki_dir, proj.raw_dir)
+    sys_pages = SYSTEM_PAGES
+
+    # Cross-type connections
+    cross_type = []
+    for e in edges:
+        fnode = node_map.get(e["from"], {})
+        tnode = node_map.get(e["to"], {})
+        ft = fnode.get("type", "unknown") if isinstance(fnode, dict) else "unknown"
+        tt = tnode.get("type", "unknown") if isinstance(tnode, dict) else "unknown"
+        if ft != tt and ft != "unknown" and tt != "unknown":
+            cross_type.append({"from": e["from"], "to": e["to"], "from_type": ft, "to_type": tt})
+
+    # Isolated pages
+    degree = {n["filename"]: 0 for n in nodes if n["filename"] not in sys_pages}
+    for e in edges:
+        if e["from"] in degree: degree[e["from"]] += 1
+        if e["to"] in degree: degree[e["to"]] += 1
+    isolated = [nid for nid, d in degree.items() if d == 0]
+
+    return {
+        "project": proj.slug,
+        "cross_type_connections": len(cross_type),
+        "isolated_pages": isolated,
+        "isolated_count": len(isolated),
+        "cross_type_examples": cross_type[:10],
+    }
 
 
 @mcp.tool()
 async def graph_export(format: str = "json", project: str = "") -> dict:
-    """Export the wiki knowledge graph.
-
-    format='json': returns the full graph as JSON.
-    format='html': generates a self-contained interactive HTML visualization.
-    """
+    """Export the wiki knowledge graph as JSON or self-contained HTML."""
     params = {"format": format}
     if project:
         params["project"] = project
@@ -1506,7 +1450,6 @@ def _universe_project_nodes(proj) -> tuple[list, list, dict]:
 def _detect_cross_project_bridges(all_nodes: list) -> list:
     """Detect cross-project connections based on title similarity."""
     bridges = []
-    from collections import defaultdict
 
     # Group by normalized title
     title_map: dict[str, list] = defaultdict(list)
@@ -1820,8 +1763,6 @@ async def graph_shortest_path_universe(from_node: str, to_node: str, project: st
         from_node: 起始节点ID (格式: project/filename)
         to_node: 目标节点ID
     """
-    from collections import deque
-
     universe_data = await graph_universe()
     nodes = universe_data["nodes"]
     edges = universe_data["edges"]
@@ -2036,6 +1977,90 @@ async def graph_export_universe(format: str = "json", project: str = "") -> dict
         }
 
     return {"ok": False, "error": f"Unsupported format: {format}. Use 'json'."}
+
+
+@mcp.tool()
+async def search_hybrid(query: str, project: str = "", top_k: int = 10, backend: str = "auto") -> dict:
+    """混合语义搜索 — 自动选择最优搜索后端（TF-IDF / qmd / Hybrid RRF融合）。
+
+    Args:
+        query: 搜索查询（支持中英文）
+        project: 项目 slug
+        top_k: 返回结果数量
+        backend: 搜索后端 (auto/tfidf/qmd/hybrid)
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(REPO_ROOT))
+
+    from dashboard.search.engine import create_search_engine, TFIDFBackend
+
+    proj = _resolve(project)
+
+    if backend == "tfidf":
+        engine = TFIDFBackend()
+    else:
+        try:
+            engine = create_search_engine()
+        except Exception:
+            engine = TFIDFBackend()
+
+    results = engine.search(query, proj.wiki_dir, top_k)
+
+    return {
+        "ok": True,
+        "query": query,
+        "backend": engine.name,
+        "project": proj.slug,
+        "total_results": len(results),
+        "results": results,
+    }
+
+
+@mcp.tool()
+async def okf_import(bundle_path: str, project: str = "", folder: str = "") -> dict:
+    """导入 OKF (Open Knowledge Format) 知识包到 Memex wiki。
+
+    Args:
+        bundle_path: OKF bundle 目录的绝对路径
+        project: 目标项目 slug
+        folder: wiki 子目录（如 "concepts"）
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(REPO_ROOT))
+
+    from pathlib import Path
+    from dashboard.wiki_extensions import import_okf_bundle
+
+    proj = _resolve(project)
+    wiki_target = proj.wiki_dir / folder if folder else proj.wiki_dir
+    wiki_target.mkdir(parents=True, exist_ok=True)
+
+    imported = import_okf_bundle(Path(bundle_path), wiki_target)
+    return {
+        "ok": True,
+        "imported_count": len(imported),
+        "pages": imported,
+    }
+
+
+@mcp.tool()
+async def okf_export(project: str = "", output_dir: str = "") -> dict:
+    """导出 Memex wiki 为 OKF (Open Knowledge Format) 格式。
+
+    Args:
+        project: 源项目 slug
+        output_dir: 输出目录路径
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(REPO_ROOT))
+
+    from pathlib import Path
+    from dashboard.wiki_extensions import export_to_okf
+
+    proj = _resolve(project)
+    out = Path(output_dir) if output_dir else REPO_ROOT / "okf-export"
+    result = export_to_okf(proj.wiki_dir, out)
+    return result
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────

@@ -1,35 +1,94 @@
 """
-provenance.py — Inline citation 파싱, 검증, provenance graph 구축.
-wiki 페이지에서 [^src-*] 형태의 footnote citation을 추적한다.
+provenance.py — Inline citation parsing, validation, and provenance graph.
 
-Citation 형식 예:
-  본문: "Transformer는 attention만으로 동작한다[^src-attention-is-all-you-need]."
-  정의: "[^src-attention-is-all-you-need]: [[source-attention-is-all-you-need]]"
+Tracks [^src-*] footnote citations in wiki pages. Uses Markdown-aware
+parsing to distinguish real prose claims from code blocks, headings,
+blockquotes, tables, and list markers.
+
+Citation format:
+  Inline: "Attention replaces recurrence[^src-attention-is-all-you-need]."
+  Definition: "[^src-attention-is-all-you-need]: [[source-attention]]"
 """
 
 import re
 from pathlib import Path
 
-# [^src-slug] 참조 (본문에서)
+# [^src-slug] reference (inline)
 CITE_REF_RE = re.compile(r"\[\^(src-[a-z0-9-]+)\](?!:)")
-# [^src-slug]: 정의 (페이지 하단)
+# [^src-slug]: definition (bottom of page)
 CITE_DEF_RE = re.compile(r"^\[\^(src-[a-z0-9-]+)\]:\s*(.+)", re.MULTILINE)
-# claim 문장: 마침표(. 。)로 끝나는 줄. frontmatter/heading/list marker/link-only 제외.
-CLAIM_RE = re.compile(
-    r"^(?!#|>|\s*-|\s*\d+\.|\s*\||\s*```|\s*\[)"  # heading, blockquote, list, table, code, link-only 제외
-    r"(.+[.。])\s*$",
-    re.MULTILINE,
-)
-FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
+
+from dashboard.models import FRONTMATTER_RE, is_system_page
+
+# ─── Markdown-aware claim detection ───
+# Previously used a single regex that couldn't distinguish code blocks
+# from prose. Now uses state-machine line parsing for accuracy.
+
+# Lines that are never claims (structural elements)
+_HEADING_RE = re.compile(r"^#{1,6}\s")
+_BLOCKQUOTE_RE = re.compile(r"^>\s")
+_UNORDERED_LIST_RE = re.compile(r"^\s*[-*+]\s+")
+_ORDERED_LIST_RE = re.compile(r"^\s*\d+\.\s+")
+_TABLE_SEP_RE = re.compile(r"^\s*\|?\s*[-:]{3,}\s*\|")  # | --- | --- |
+_TABLE_ROW_RE = re.compile(r"^\s*\|")  # | cell | cell |
+_LINK_ONLY_RE = re.compile(r"^\s*\[([^\]]+)\](?:\([^)]+\))?\s*$")  # [text](url) only
+_CODE_FENCE_RE = re.compile(r"^\s*```")
+_FRONTMATTER_END_RE = re.compile(r"^---\s*$")
+_EMPTY_RE = re.compile(r"^\s*$")
 
 
 def _strip_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter block from text."""
     m = FRONTMATTER_RE.match(text)
     return text[m.end():] if m else text
 
 
+def _extract_prose_claims(body: str) -> list[str]:
+    """Extract prose claim sentences using Markdown state-machine parsing.
+
+    Accurately excludes: code fences, headings, blockquotes, list items,
+    table rows, link-only lines, empty lines, and frontmatter.
+    """
+    claims = []
+    in_code_block = False
+    in_frontmatter = False
+    fm_end_count = 0  # track frontmatter end markers seen
+
+    for line in body.split("\n"):
+        # Track frontmatter boundaries
+        if _FRONTMATTER_END_RE.match(line) and fm_end_count == 0:
+            fm_end_count += 1
+            continue
+
+        # Track code fences
+        if _CODE_FENCE_RE.match(line):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            continue
+
+        # Skip structural lines
+        if (_HEADING_RE.match(line) or
+            _BLOCKQUOTE_RE.match(line) or
+            _UNORDERED_LIST_RE.match(line) or
+            _ORDERED_LIST_RE.match(line) or
+            _TABLE_SEP_RE.match(line) or
+            _TABLE_ROW_RE.match(line) or
+            _LINK_ONLY_RE.match(line) or
+            _EMPTY_RE.match(line)):
+            continue
+
+        # Check if line contains a claim-ending sentence
+        stripped = line.strip()
+        if stripped.endswith(".") or stripped.endswith("。"):
+            claims.append(stripped)
+
+    return claims
+
+
 def parse_citations(page_content: str) -> dict[str, list[int]]:
-    """페이지에서 [^src-*] 참조를 추출 → {source_slug: [char_positions]}"""
+    """Extract [^src-*] references from page → {source_slug: [char_positions]}"""
     body = _strip_frontmatter(page_content)
     result: dict[str, list[int]] = {}
     for m in CITE_REF_RE.finditer(body):
@@ -39,15 +98,15 @@ def parse_citations(page_content: str) -> dict[str, list[int]]:
 
 
 def _get_definitions(page_content: str) -> dict[str, str]:
-    """페이지 하단의 [^src-*]: 정의 추출 → {slug: target_text}"""
+    """Extract [^src-*]: definitions → {slug: target_text}"""
     body = _strip_frontmatter(page_content)
     return {m.group(1): m.group(2).strip() for m in CITE_DEF_RE.finditer(body)}
 
 
 def _count_claims(page_content: str) -> tuple[int, int]:
-    """(총 claim 수, citation 있는 claim 수) 반환"""
+    """Count (total claims, cited claims) using Markdown-aware parsing."""
     body = _strip_frontmatter(page_content)
-    claims = CLAIM_RE.findall(body)
+    claims = _extract_prose_claims(body)
     total = len(claims)
     cited = sum(1 for c in claims if CITE_REF_RE.search(c))
     return total, cited
@@ -94,7 +153,7 @@ def build_provenance_graph(wiki_dir: Path) -> list[dict]:
     for md in sorted(wiki_dir.rglob("*.md")):
         rel = str(md.relative_to(wiki_dir))
         # 메타 페이지는 스킵
-        if rel in ("index.md", "log.md"):
+        if is_system_page(rel):
             continue
         text = md.read_text("utf-8")
         # source 타입 페이지는 그 자체가 출처이므로 스킵

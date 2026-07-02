@@ -8,16 +8,25 @@ LLM Wiki Dashboard Server
 """
 
 import json, os, re, select, shutil, ssl, subprocess, sys, time, threading, urllib.error, urllib.parse, urllib.request
+
+# Shared models and utilities (single source of truth)
+from dashboard.models import (
+    make_slug, parse_fm, extract_links, extract_citations,
+    WikiPage, GraphNode, GraphEdge, SearchResult,
+    FRONTMATTER_RE, WIKILINK_RE, LOG_ENTRY_RE, is_system_page,
+    SYSTEM_PAGES, resolve_wikilink_target,
+)
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from provenance import build_provenance_graph
-from index_strategy import get_strategy, get_index_instruction, rebuild_index
 from pathlib import Path
-import project_registry
-from project_registry import REGISTRY_FILE
-import wiki_ops
-import llm_provider
-from scheduler import _load_schedules as _sched_load, _save_schedules as _save_sched_files
+
+from dashboard.provenance import build_provenance_graph
+from dashboard.index_strategy import get_strategy, get_index_instruction, rebuild_index
+import dashboard.project_registry as project_registry
+from dashboard.project_registry import REGISTRY_FILE
+import dashboard.wiki_ops as wiki_ops
+import dashboard.llm_provider as llm_provider
+from dashboard.scheduler import _load_schedules as _sched_load, _save_schedules as _save_sched_files
 
 PORT = int(os.environ.get("PORT", "8090"))
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -27,6 +36,7 @@ RAW_DIR = PROJECT_ROOT / "raw"
 
 # 환경변수로 조정 가능. 기본 600초(10분) — Ingest는 페이지 10+개 생성 시 오래 걸림.
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "600"))
+CLAUDE_TOOLS = os.environ.get("CLAUDE_TOOLS", "Edit,Write,Read,Glob,Grep")
 # 짧은 진단용 timeout
 CLAUDE_QUICK_TIMEOUT = int(os.environ.get("CLAUDE_QUICK_TIMEOUT", "30"))
 # Stream heartbeat interval (seconds)
@@ -47,7 +57,25 @@ HTTP_PRESETS = [
 
 
 def _save_settings(s):
-    SETTINGS_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Atomically write settings to avoid corruption from concurrent writers."""
+    import tempfile
+    data = json.dumps(s, ensure_ascii=False, indent=2)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", delete=False,
+        dir=SETTINGS_FILE.parent, prefix=".dashboard-settings.",
+    )
+    try:
+        tmp.write(data)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp.name, str(SETTINGS_FILE))
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
 
 
 SETTINGS = llm_provider.load_settings()
@@ -154,8 +182,8 @@ def _build_llm_ui() -> dict:
     }
 
 
-# Backward-compat: dashboard UI calls llm_provider.http_ready(SETTINGS) directly
-_openai_http_ready = llm_provider.http_ready
+# Backward-compat: lambda wrapping http_ready with SETTINGS
+_openai_http_ready = lambda: llm_provider.http_ready(SETTINGS)
 
 
 # Backward-compat aliases for CLI helpers used by run_claude_tracked / run_claude_streaming
@@ -231,16 +259,7 @@ def _resolve_project_body(body):
 
 # ─── slug 생성 (한글/유니코드 지원) ───
 
-def make_slug(title):
-    """제목 → 파일 슬러그. 한글은 그대로 유지, 특수문자만 제거."""
-    s = (title or "").strip().lower()
-    # \w는 유니코드 워드(한글 포함) + _, 공백은 허용 → 하이픈으로
-    s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
-    s = re.sub(r"[\s_]+", "-", s)
-    s = re.sub(r"-+", "-", s).strip("-")
-    if not s:
-        s = f"untitled-{int(time.time())}"
-    return s
+# make_slug, parse_fm, extract_links, FRONTMATTER_RE, WIKILINK_RE now imported from dashboard.models
 
 
 # ─── raw/ 보호 ───
@@ -416,47 +435,7 @@ class GitManager:
 
 git_mgr = GitManager()
 
-# ─── helpers ───
-
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
-LOG_ENTRY_RE = re.compile(r"^## \[(\d{4}-\d{2}-\d{2})\] (\w+) \| (.+)$", re.MULTILINE)
-
-
-def parse_fm(text):
-    meta, body = {}, text
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return meta, body
-    body = text[m.end():]
-    raw = m.group(1)
-    for ml in re.finditer(r"^(\w+):\s*\n((?:\s+-\s+.+\n?)+)", raw, re.MULTILINE):
-        meta[ml.group(1)] = [x.strip().strip("'\"") for x in re.findall(r"-\s+(.+)", ml.group(2))]
-    for line in raw.strip().split("\n"):
-        if ":" not in line or line.startswith("  "):
-            continue
-        k, v = line.split(":", 1)
-        k, v = k.strip(), v.strip()
-        if k in meta:
-            continue
-        lm = re.search(r"\[(.*?)\]", v)
-        if lm:
-            meta[k] = [x.strip().strip("'\"") for x in lm.group(1).split(",") if x.strip()]
-        elif v:
-            meta[k] = v.strip("'\"")
-    return meta, body
-
-
-def extract_links(body):
-    results = set()
-    for m in WIKILINK_RE.finditer(body):
-        link = m.group(1).strip()
-        # Strip #anchor portion
-        link = link.split('#')[0]
-        if not link.endswith('.md'):
-            link += '.md'
-        results.add(link)
-    return sorted(results)
+# ─── helpers (parse_fm, extract_links, make_slug, LOG_ENTRY_RE now imported from dashboard.models) ───
 
 
 def _timeout_hint():
@@ -470,22 +449,12 @@ def _timeout_hint():
     )
 
 
-def _model_args_for(project=None):
-    """프로젝트의 model → CLI 인자. 레거시는 전역 SETTINGS 사용."""
-    if project is not None and not project.is_legacy:
-        m = project.model
-        if m and m != "default":
-            return ["--model", m]
-        return []
-    return _claude_model_args()
-
-
 def run_claude_tracked(prompt, cwd=None, project=None):
     """Trace Claude CLI stream-json events (Query only — HTTP queries use _do_query_openai_rag).
 
     → (ok, answer, error, files_read, token_usage)"""
     target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
-    exe = get_claude_cli_executable()
+    exe = llm_provider.get_cli_executable(SETTINGS)
     cmd = (
         [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
         + _model_args_for(project)
@@ -715,7 +684,7 @@ def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
     """
     t = timeout or CLAUDE_TIMEOUT
     target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
-    exe = get_cli_executable()
+    exe = llm_provider.get_cli_executable(SETTINGS)
     cmd = (
         [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
         + _model_args_for(project)
@@ -1268,21 +1237,6 @@ def _normalize_ui_lang(code):
     return None
 
 
-def _display_title(meta, fallback_stem, ui_lang=None):
-    """Pick visible title: optional title_zh/title_en/title_ko, then title, then stem."""
-    stem_display = fallback_stem.replace("-", " ").title()
-    if ui_lang in ("en", "ko", "zh"):
-        lk = {"en": "title_en", "ko": "title_ko", "zh": "title_zh"}.get(ui_lang)
-        if lk:
-            tv = meta.get(lk)
-            if isinstance(tv, str) and tv.strip():
-                return tv.strip()
-    bt = meta.get("title")
-    if isinstance(bt, str) and bt.strip():
-        return bt.strip()
-    return stem_display
-
-
 def _resolve_project(slug=None):
     """slug → Project.
 
@@ -1293,125 +1247,13 @@ def _resolve_project(slug=None):
 
 
 def build_wiki_data(project_slug=None, ui_lang=None):
+    """Build wiki data by delegating to the shared graph builder."""
     proj = _resolve_project(project_slug)
-    wiki_dir = proj.wiki_dir
-    raw_dir = proj.raw_dir
-    pages, nodes, edges = [], [], []
-    type_counts, node_ids = {}, set()
-    if not wiki_dir.exists():
-        return {
-            "project": proj.slug, "pages": [], "graph": {"nodes": [], "edges": []}, "log": [],
-            "stats": {"total_pages": 0, "raw_sources": 0, "type_counts": {}, "total_links": 0,
-                      "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M")},
-        }
-    for md in sorted(wiki_dir.rglob("*.md")):
-        rel = md.relative_to(wiki_dir)
-        filename = str(rel)
-        text = md.read_text(encoding="utf-8")
-        meta, body = parse_fm(text)
-        links = extract_links(body)
-        pt = meta.get("type", "unknown")
-        type_counts[pt] = type_counts.get(pt, 0) + 1
-        folder = str(rel.parent) if rel.parent != Path(".") else ""
-        disp_title = _display_title(meta, md.stem, ui_lang)
-        pages.append({
-            "filename": filename, "folder": folder,
-            "title": disp_title,
-            "type": pt, "created": meta.get("created", ""), "updated": meta.get("updated", ""),
-            "tags": meta.get("tags", []), "sources": meta.get("sources", []),
-            "links": links, "word_count": len(body.split()), "content": body.strip(),
-            "status": meta.get("status", "active"),
-            "confidence": meta.get("confidence", ""),
-        })
-        node_ids.add(filename)
-        nodes.append({"id": filename, "label": disp_title, "type": pt})
-        for lnk in links:
-            edges.append({"from": filename, "to": lnk})
-    # Build basename → [all matching filenames] lookup table
-    # Also build filename → title map for fuzzy matching on collision
-    basename_candidates = {}   # basename/stem → [full_paths]
-    filename_to_title = {}     # filename → display title
-    for p in pages:
-        fid = p["filename"]
-        fn = os.path.basename(fid)
-        stem = fid.replace('.md', '')
-        if fn not in basename_candidates:
-            basename_candidates[fn] = []
-        basename_candidates[fn].append(fid)
-        if stem not in basename_candidates:
-            basename_candidates[stem] = []
-        basename_candidates[stem].append(fid)
-        filename_to_title[fid] = p["title"]
-
-    def _resolve_target(target, title_hint=""):
-        """Resolve a wikilink target to its canonical full-path filename."""
-        # Exact match first (handles already-resolved paths like "wiki/page.md")
-        if target in node_ids:
-            return target
-        # Strip fragment identifier
-        clean = target.split("#", 1)[0]
-        if clean in node_ids:
-            return clean
-        candidates = basename_candidates.get(clean) or basename_candidates.get(os.path.basename(clean))
-        if not candidates:
-            return None
-        if len(candidates) == 1:
-            return candidates[0]
-        # Collision: prefer match by title similarity or directory prefix
-        if title_hint:
-            hint_lower = title_hint.lower().replace(" ", "-").replace("_", "-")
-            scores = []
-            for c in candidates:
-                ct = filename_to_title.get(c, "").lower().replace(" ", "-").replace("_", "-")
-                # Exact substring match wins
-                if hint_lower == ct:
-                    return c
-                if hint_lower in ct or ct in hint_lower:
-                    scores.append((c, 2))
-                else:
-                    # Count shared words
-                    hw = set(hint_lower.split("-"))
-                    cw = set(ct.split("-"))
-                    shared = len(hw & cw)
-                    if shared > 0:
-                        scores.append((c, shared))
-            if scores:
-                scores.sort(key=lambda x: x[1], reverse=True)
-                return scores[0][0]
-        # Fall back to first candidate (original behavior)
-        return candidates[0]
-
-    for e in edges:
-        target = e["to"]
-        # Use source page's title as hint for disambiguation
-        source_title = ""
-        src_file = e["from"]
-        for p in pages:
-            if p["filename"] == src_file:
-                source_title = p["title"]
-                break
-        resolved = _resolve_target(target, source_title)
-        if resolved:
-            e["to"] = resolved
-        elif target not in node_ids and target.split("#", 1)[0] not in node_ids:
-            # Create stub node for unresolved targets so edges aren't silently lost
-            stub_id = target
-            stub_label = os.path.basename(stub_id).replace(".md", "").replace("-", " ").title()
-            nodes.append({"id": stub_id, "label": stub_label, "type": "missing"})
-            node_ids.add(stub_id)
-    log_entries = []
-    lf = wiki_dir / "log.md"
-    if lf.exists():
-        _, lb = parse_fm(lf.read_text("utf-8"))
-        log_entries = [{"date": m.group(1), "action": m.group(2), "title": m.group(3)} for m in LOG_ENTRY_RE.finditer(lb)]
-    raw_count = sum(1 for f in raw_dir.rglob("*") if f.is_file() and not f.name.startswith(".") and "assets" not in f.parts) if raw_dir.exists() else 0
-    return {
-        "project": proj.slug,
-        "pages": pages,
-        "graph": {"nodes": nodes, "edges": edges},
-        "log": log_entries,
-        "stats": {"total_pages": len(pages), "raw_sources": raw_count, "type_counts": type_counts, "total_links": len(edges), "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M")},
-    }
+    from dashboard.graph.builder import build_wiki_data as _builder_build
+    return _builder_build(
+        proj.wiki_dir, proj.raw_dir,
+        project_slug=proj.slug, ui_lang=ui_lang,
+    )
 
 
 def get_folder_tree(project_slug=None):
@@ -1486,7 +1328,7 @@ def _build_nx_graph(proj):
     import networkx as nx
 
     nodes, edges, node_map = _build_graph_data(proj)
-    sys_pages = {"index.md", "log.md", "overview.md"}
+    sys_pages = SYSTEM_PAGES
     G = nx.Graph()
     for n in nodes:
         fn = n["filename"]
@@ -1515,7 +1357,7 @@ def _graph_build_api(proj):
 
 def _graph_stats_api(proj):
     nodes, edges, node_map = _build_graph_data(proj)
-    sys_pages = {"index.md", "log.md", "overview.md"}
+    sys_pages = SYSTEM_PAGES
     type_counts = {}
     for n in nodes:
         type_counts[n["type"]] = type_counts.get(n["type"], 0) + 1
@@ -1539,7 +1381,7 @@ def _graph_stats_api(proj):
 
 def _graph_god_nodes_api(proj, top_n=10):
     nodes, edges, node_map = _build_graph_data(proj)
-    sys_pages = {"index.md", "log.md", "overview.md"}
+    sys_pages = SYSTEM_PAGES
     degree = {n["filename"]: 0 for n in nodes if n["filename"] not in sys_pages}
     for e in edges:
         if e["from"] in degree:
@@ -1922,7 +1764,7 @@ def _graph_neighbors_api(proj, node_id):
 
 def _graph_insights_api(proj):
     nodes, edges, node_map = _build_graph_data(proj)
-    sys_pages = {"index.md", "log.md", "overview.md"}
+    sys_pages = SYSTEM_PAGES
     degree = {n["filename"]: 0 for n in nodes}
     for e in edges:
         if e["from"] in degree:
@@ -2294,11 +2136,17 @@ def _universe_project_nodes(proj):
 
     Excludes system pages (index.md, log.md, overview.md) — these are
     consolidated into global hub nodes by _build_universe_graph().
+
+    Detects cross-project wikilinks ([[project-slug/page]]) and preserves
+    them as direct cross-project edges without local-project prefixing.
     """
     nodes, edges, node_map = _build_graph_data(proj)
     prefixed_nodes = []
     prefixed_edges = []
-    sys_pages = {"index.md", "log.md", "overview.md"}
+    sys_pages = SYSTEM_PAGES
+
+    # Collect known project slugs for cross-project link detection
+    known_slugs = {p.slug for p in project_registry.list_projects()}
 
     for n in nodes:
         if n["filename"] in sys_pages:
@@ -2319,13 +2167,32 @@ def _universe_project_nodes(proj):
 
     for e in edges:
         src_id = f"{proj.slug}/{e['from']}"
-        tgt_id = f"{proj.slug}/{e['to']}"
-        prefixed_edges.append({
-            "source": src_id,
-            "target": tgt_id,
-            "type": "wikilink",
-            "project": proj.slug,
-        })
+        tgt_raw = e['to']
+
+        # Check if target is a cross-project wikilink: [[other-project/page]]
+        xp_link = None
+        if '/' in tgt_raw:
+            from dashboard.models import parse_cross_project_link
+            xp_link = parse_cross_project_link(tgt_raw)
+        if xp_link and xp_link["project_slug"] in known_slugs:
+            tgt_path = xp_link["page_path"]
+            if not tgt_path.endswith('.md'):
+                tgt_path += '.md'
+            tgt_id = f"{xp_link['project_slug']}/{tgt_path}"
+            prefixed_edges.append({
+                "source": src_id,
+                "target": tgt_id,
+                "type": "cross-project",
+                "project": proj.slug,
+            })
+        else:
+            tgt_id = f"{proj.slug}/{tgt_raw}"
+            prefixed_edges.append({
+                "source": src_id,
+                "target": tgt_id,
+                "type": "wikilink",
+                "project": proj.slug,
+            })
 
     return prefixed_nodes, prefixed_edges, node_map
 
@@ -2395,6 +2262,34 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
     return bridges
 
 
+def _merge_instance_tags(group: list) -> list:
+    """Merge tags from all instances, preserving order and deduplicating."""
+    seen = set()
+    merged = []
+    for n in group:
+        for t in n.get("tags", []):
+            if t not in seen:
+                seen.add(t)
+                merged.append(t)
+    return merged
+
+
+def _best_instance_status(group: list) -> str:
+    """Pick the best status from all instances (active > draft > archived)."""
+    priority = {"active": 3, "draft": 2, "archived": 1}
+    best = max(group, key=lambda n: priority.get(n.get("status", "draft"), 0))
+    return best.get("status", "active")
+
+
+def _best_instance_confidence(group: list) -> str:
+    """Pick the first non-empty confidence from all instances."""
+    for n in group:
+        c = n.get("confidence", "")
+        if c:
+            return c
+    return ""
+
+
 def _consolidate_same_title_nodes(nodes: list, edges: list) -> tuple:
     """Group nodes by exact title (label) across projects.
 
@@ -2437,9 +2332,9 @@ def _consolidate_same_title_nodes(nodes: list, edges: list) -> tuple:
                     }
                     for n in group
                 ],
-                "tags": group[0].get("tags", []),
-                "status": group[0].get("status", "active"),
-                "confidence": group[0].get("confidence", ""),
+                "tags": _merge_instance_tags(group),
+                "status": _best_instance_status(group),
+                "confidence": _best_instance_confidence(group),
             })
             for n in group:
                 id_to_merged[n["id"]] = merged_id
@@ -2523,7 +2418,37 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
         bridge["to_node"] = new_tgt
         bridges.append(bridge)
 
-    # Build global hub nodes for index.md and log.md
+    # Add surviving bridge connections as INFERRED edges in the graph.
+    # Without this, bridge connections exist only as metadata — merged nodes
+    # that are linked by bridges but have no wikilinks appear as orphans (degree=0)
+    # in the force layout.
+    for b in bridges:
+        all_edges.append({
+            "source": b["from_node"],
+            "target": b["to_node"],
+            "type": "INFERRED",
+            "project": "",
+            "bridge": True,
+        })
+
+    # Explicit cross-project wikilinks ([[project-slug/page]]) already
+    # created as type:"cross-project" edges in _universe_project_nodes.
+    # Register them as bridges too so they render with dashed styling.
+    for e in all_edges:
+        if e.get("type") == "cross-project":
+            bridges.append({
+                "from_node": e["source"],
+                "to_node": e["target"],
+                "from_title": "",
+                "from_project": e.get("project", ""),
+                "to_title": "",
+                "to_project": e["target"].split("/", 1)[0] if "/" in e["target"] else "",
+                "similarity": 1.0,
+                "reason": "显式跨项目 wikilink",
+                "_explicit_cross_project": True,
+            })
+
+    # Build global hub nodes for index.md, log.md, and overview.md
     sys_hubs = {
         "system/index": {
             "id": "system/index", "label": "Index",
@@ -2539,16 +2464,23 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
             "project": "system", "project_title": "System",
             "status": "active", "confidence": "",
         },
+        "system/overview": {
+            "id": "system/overview", "label": "Overview",
+            "type": "system", "filename": "overview.md",
+            "word_count": 0, "tags": [],
+            "project": "system", "project_title": "System",
+            "status": "active", "confidence": "",
+        },
     }
     all_node_ids = {n["id"] for n in all_nodes} | set(sys_hubs.keys())
 
-    # Remap edges: project-level index.md/log.md → system hubs, then
+    # Remap edges: project-level index.md/log.md/overview.md → system hubs, then
     # apply title-consolidation ID mapping.
     hub_map = {}
     for proj in project_registry.list_projects():
         if not include_hidden and proj.slug in excluded:
             continue
-        for sp in ("index.md", "log.md"):
+        for sp in SYSTEM_PAGES:
             hub_map[f"{proj.slug}/{sp}"] = f"system/{sp}"
 
     final_edges = []
@@ -2689,7 +2621,7 @@ def _read_obsidian_facts():
 
 def check_status():
     claude_ok, claude_ver = False, ""
-    exe = get_claude_cli_executable()
+    exe = llm_provider.get_cli_executable(SETTINGS)
     try:
         r = subprocess.run(
             [exe, "--version"],
@@ -2715,14 +2647,14 @@ def diagnose_claude():
     """Claude CLI를 빠르게 점검 — 설치, 인증, 모델 응답 시간"""
     env_cli = _cli_subprocess_env()
     path_preview = env_cli.get("PATH", "")[:280]
-    extra_dirs = _parse_cli_path_extra_dirs()
+    extra_dirs = llm_provider._parse_cli_path_extra_dirs(SETTINGS)
 
     result = {
         "cli_installed": False,
         "version": "",
         "auth_ok": None,
         "model": SETTINGS.get("model", "default"),
-        "model_args": _claude_model_args(),
+        "model_args": llm_provider._model_args_for(None, SETTINGS),
         "quick_test_seconds": None,
         "quick_test_ok": False,
         "quick_test_output": "",
@@ -2735,7 +2667,7 @@ def diagnose_claude():
         "cli_type": SETTINGS.get("cli_type", "claude"),
     }
 
-    exe = get_claude_cli_executable()
+    exe = llm_provider.get_cli_executable(SETTINGS)
     result["cli_binary"] = SETTINGS.get("claude_cli_binary", "claude")
     result["resolved_executable"] = exe
 
@@ -2775,9 +2707,9 @@ def diagnose_claude():
     # 2. 짧은 prompt로 응답 시간 측정 (인증 + 모델 접근 동시 확인)
     try:
         t0 = time.time()
-        exe = get_claude_cli_executable()
+        exe = llm_provider.get_cli_executable(SETTINGS)
         r = subprocess.run(
-            [exe, "-p"] + _claude_model_args() + _parse_claude_extra_args() + ["--output-format", "text", "Reply with the single word OK."],
+            [exe, "-p"] + llm_provider._model_args_for(None, SETTINGS) + _parse_claude_extra_args() + ["--output-format", "text", "Reply with the single word OK."],
             capture_output=True, text=True, timeout=CLAUDE_QUICK_TIMEOUT,
             cwd=str(PROJECT_ROOT),
             env=_cli_subprocess_env(),
@@ -3587,8 +3519,6 @@ def validate_links_api(project_slug=None):
         slug_map[fn.lower().replace(".md", "")] = fn
 
     import re as _re
-    # Find all wikilinks
-    wikilink_re = _re.compile(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]')
     citation_re = _re.compile(r'\[\^src-[a-zA-Z0-9_-]+\]')
 
     total_claims = 0
@@ -3596,7 +3526,7 @@ def validate_links_api(project_slug=None):
     for fn, info in pages.items():
         content = info["content"]
         # Check for wikilinks
-        matches = wikilink_re.findall(content)
+        matches = WIKILINK_RE.findall(content)
         for target in matches:
             target_lower = target.strip().lower()
             # Normalize: remove spaces, hyphens for matching
@@ -3608,13 +3538,12 @@ def validate_links_api(project_slug=None):
             # Check slug_map
             elif target_slug in slug_map:
                 matched = True
-            # Try partial match (common pattern)
+            # Use shared resolution with basename lookup + title hint
             if not matched:
-                for known in known_filenames:
-                    known_slug = known.split("/")[-1].replace("-", " ").replace(".md", "").lower()
-                    if target_slug[:4] in known_slug or known_slug[:4] in target_slug:
-                        matched = True
-                        break
+                resolved = resolve_wikilink_target(
+                    target_slug, known_filenames, title_hint=info.get("title", ""))
+                if resolved:
+                    matched = True
             if not matched:
                 issues["broken_links"].append({
                     "from_page": fn,
@@ -3671,9 +3600,7 @@ def fix_links_batch_api(project_slug, auto_create=False, alias_map=None):
                 changed = True
         # Auto-create missing pages
         if auto_create:
-            import re as _re2
-            wikilink_re = _re2.compile(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]')
-            targets = wikilink_re.findall(content)
+            targets = WIKILINK_RE.findall(content)
             for target in targets:
                 target_clean = target.strip()
                 target_slug = target_clean.replace(" ", "-")
@@ -4600,7 +4527,7 @@ def delete_page(filename, project_slug=None):
         return {"ok": False, "error": str(e)}
     if not filepath.exists():
         return {"ok": False, "error": "Page not found"}
-    if filename in ("index.md", "log.md", "overview.md"):
+    if filename in SYSTEM_PAGES:
         return {"ok": False, "error": "Cannot delete system page"}
     filepath.unlink()
     return {"ok": True, "project": proj.slug}
@@ -4650,7 +4577,7 @@ def merge_dashboard_settings(body):
     if "ai_profiles" in body and isinstance(body.get("ai_profiles"), dict):
         SETTINGS["ai_profiles"] = body["ai_profiles"]
     _save_settings(SETTINGS)
-    _apply_active_profile()
+    # Active profile application handled by llm_provider via SETTINGS
     return {"ok": True}
 
 
@@ -4666,7 +4593,7 @@ def api_ai_test_connection():
 
 def api_cli_test():
     """Quick CLI probe — same resolution as ingest (PATH + cli_path_extra)."""
-    exe = get_cli_executable()
+    exe = llm_provider.get_cli_executable(SETTINGS)
     env = _cli_subprocess_env()
     hints = []
     ct = SETTINGS.get("cli_type", "claude")

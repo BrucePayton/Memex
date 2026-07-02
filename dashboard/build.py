@@ -18,10 +18,15 @@ WIKI_DIR = PROJECT_ROOT / "wiki"
 RAW_DIR = PROJECT_ROOT / "raw"
 OUTPUT = SCRIPT_DIR / "data.json"
 
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+import sys
+from pathlib import Path
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR.parent))
+
+from dashboard.models import FRONTMATTER_RE, WIKILINK_RE
+
 YAML_LIST_RE = re.compile(r"\[(.*?)\]")
-# [[target]] 또는 [[target|display]]
-WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
 # [text](file.md) 전통 링크도 지원
 MDLINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+\.md)\)")
 LOG_ENTRY_RE = re.compile(r"^## \[(\d{4}-\d{2}-\d{2})\] (\w+) \| (.+)$", re.MULTILINE)

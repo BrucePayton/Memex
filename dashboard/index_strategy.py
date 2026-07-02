@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+from dashboard.models import FRONTMATTER_RE, SYSTEM_PAGES
 
 THRESHOLDS = {"flat": 50, "hierarchical": 200}
 
@@ -26,7 +26,7 @@ TYPE_INDEX = {
 }
 
 # 이 파일들은 일반 페이지 카운트에서 제외
-SYSTEM_FILES = {"index.md", "log.md", "overview.md"} | set(TYPE_INDEX.values())
+SYSTEM_FILES = SYSTEM_PAGES | set(TYPE_INDEX.values())
 
 
 def _parse_type(text: str) -> str:
