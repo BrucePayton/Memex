@@ -107,18 +107,9 @@ def _save_schedules(schedules: list[dict]):
 
 
 def _append_log(wiki_dir: Path, message: str):
-    """Append an entry to wiki/log.md."""
-    log_file = wiki_dir / "log.md"
-    today = datetime.now().strftime("%Y-%m-%d")
-    entry = f"\n## [{today}] maintenance | Scheduled: {message}\nAuto-executed by scheduler.\n"
-
-    with _settings_lock:
-        if log_file.exists():
-            text = log_file.read_text("utf-8")
-        else:
-            text = f"---\ntitle: Wiki Log\ntype: overview\nstatus: active\n---\n"
-        text += entry
-        log_file.write_text(text, encoding="utf-8")
+    """Atomically append an entry to wiki/log.md."""
+    from dashboard.models import append_log_entry
+    append_log_entry(wiki_dir, "maintenance", f"Scheduled: {message}", "Auto-executed by scheduler.")
 
 
 def _run_schedule(sched: dict):

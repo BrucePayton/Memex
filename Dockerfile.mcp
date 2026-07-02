@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir --root-user-action=ignore -r mcp-server/requireme
 
 # Copy application code
 COPY --chown=appuser:appuser mcp-server/ ./mcp-server/
-COPY --chown=appuser:appuser dashboard/project_registry.py ./dashboard/
-COPY --chown=appuser:appuser dashboard/wiki_ops.py ./dashboard/
+COPY --chown=appuser:appuser dashboard/ ./dashboard/
 COPY --chown=appuser:appuser projects.json .
 COPY --chown=appuser:appuser CLAUDE.md .
 COPY --chown=appuser:appuser README.md .

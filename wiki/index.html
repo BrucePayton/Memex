@@ -392,7 +392,7 @@ body.universe-view .idx-banner{display:none;}
 .ir-actions{margin-top:18px;display:flex;gap:10px}
 
 /* ── Claude 캐릭터 (floating) ── */
-.claude-char{position:fixed;z-index:150;width:64px;height:64px;cursor:pointer;transition:transform var(--d-med) var(--ease),opacity var(--d-med);filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));user-select:none}
+.claude-char{position:fixed;z-index:150;right:20px;bottom:20px;width:64px;height:64px;cursor:pointer;transition:transform var(--d-med) var(--ease),opacity var(--d-med);filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));user-select:none}
 .claude-char:hover{transform:scale(1.15)}
 .claude-char.hidden{opacity:0;pointer-events:none;transform:scale(0.5)}
 /* 하얀 배경에서는 inverted 필요 (다크 UI이므로 흰 테두리) */
@@ -1788,8 +1788,7 @@ async function initClaudeCharacter(){
   // 최초 위치
   positionCharacter(charPos.x,charPos.y);
 
-  // 주기적으로 살짝 이동 (랜덤 walk)
-  charMoveInterval=setInterval(wanderCharacter,6000);
+  // 주기적 이동 비활성화 — 우하단 고정
 
   // 첫 방문자에겐 말풍선 힌트 (localStorage)
   if(!localStorage.getItem('char_seen')){
@@ -1802,13 +1801,13 @@ async function initClaudeCharacter(){
 
 function positionCharacter(x,y){
   var el=document.getElementById('claudeChar');if(!el)return;
-  var maxX=window.innerWidth-80;
-  var maxY=window.innerHeight-80;
+  var maxX=window.innerWidth-20;
+  var maxY=window.innerHeight-20;
   charPos.x=Math.max(20,Math.min(maxX,x));
-  charPos.y=Math.max(60,Math.min(maxY,y));  // header 아래
-  el.style.left=charPos.x+'px';
-  el.style.top=charPos.y+'px';
-  el.style.right='';el.style.bottom='';
+  charPos.y=Math.max(60,Math.min(maxY,y));
+  el.style.right=(window.innerWidth-charPos.x)+'px';
+  el.style.bottom=(window.innerHeight-charPos.y)+'px';
+  el.style.left='';el.style.top='';
 }
 
 function wanderCharacter(){
