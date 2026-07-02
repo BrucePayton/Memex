@@ -12,6 +12,14 @@ graph = [
   "graphify@git+https://github.com/safishams/graphify",
   "networkx>=3.0",
 ]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [project.scripts]
 memex-server = "dashboard.server:main"
