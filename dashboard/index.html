@@ -392,7 +392,7 @@ body.universe-view .idx-banner{display:none;}
 .ir-actions{margin-top:18px;display:flex;gap:10px}
 
 /* ── Claude 캐릭터 (floating) ── */
-.claude-char{position:fixed;z-index:150;width:64px;height:64px;cursor:pointer;transition:transform var(--d-med) var(--ease),opacity var(--d-med);filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));user-select:none}
+.claude-char{position:fixed;z-index:150;right:20px;bottom:20px;width:64px;height:64px;cursor:pointer;transition:transform var(--d-med) var(--ease),opacity var(--d-med);filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));user-select:none}
 .claude-char:hover{transform:scale(1.15)}
 .claude-char.hidden{opacity:0;pointer-events:none;transform:scale(0.5)}
 /* 하얀 배경에서는 inverted 필요 (다크 UI이므로 흰 테두리) */
@@ -1833,8 +1833,7 @@ async function initClaudeCharacter(){
   // 최초 위치
   positionCharacter(charPos.x,charPos.y);
 
-  // 주기적으로 살짝 이동 (랜덤 walk)
-  charMoveInterval=setInterval(wanderCharacter,6000);
+  // 주기적 이동 비활성화 — 우하단 고정
 
   // 첫 방문자에겐 말풍선 힌트 (localStorage)
   if(!localStorage.getItem('char_seen')){
@@ -1847,13 +1846,13 @@ async function initClaudeCharacter(){
 
 function positionCharacter(x,y){
   var el=document.getElementById('claudeChar');if(!el)return;
-  var maxX=window.innerWidth-80;
-  var maxY=window.innerHeight-80;
+  var maxX=window.innerWidth-20;
+  var maxY=window.innerHeight-20;
   charPos.x=Math.max(20,Math.min(maxX,x));
-  charPos.y=Math.max(60,Math.min(maxY,y));  // header 아래
-  el.style.left=charPos.x+'px';
-  el.style.top=charPos.y+'px';
-  el.style.right='';el.style.bottom='';
+  charPos.y=Math.max(60,Math.min(maxY,y));
+  el.style.right=(window.innerWidth-charPos.x)+'px';
+  el.style.bottom=(window.innerHeight-charPos.y)+'px';
+  el.style.left='';el.style.top='';
 }
 
 function wanderCharacter(){
@@ -2483,17 +2482,44 @@ function setupScrollSpy(){
 }
 
 function showPage(fn){
+  // Decode URL-encoded filenames (marked.js encodes CJK characters)
+  try{fn=decodeURIComponent(fn);}catch(e){}
+  // Strip leading hash if present
+  fn=fn.replace(/^#/,'');
   // Keep curFolder — preserve sidebar folder expansion when navigating
   cur=fn;setView('page');
   // Try exact match first
   let p=D.pages.find(x=>x.filename===fn);
   // Fallback: basename match (links may omit folder path)
   if(!p){const base=fn.replace('.md','');p=D.pages.find(x=>x.filename.replace('.md','').split('/').pop()===base);}
-  // Fallback: title match
+  // Fallback: title match (wikilinks use display titles, not slugs)
   if(!p){const stem=fn.replace('.md','');p=D.pages.find(x=>x.title===stem);}
+  // Fallback: slug match (e.g. "索引" → make_slug("索引") → match filename)
+  if(!p){const stem=fn.replace('.md','');const slug=stem.toLowerCase().replace(/[^\w\s-]/g,'').replace(/[\s_]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');p=D.pages.find(x=>x.filename.replace('.md','').split('/').pop()===slug);}
   if(!p){document.getElementById('content').innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)">Page not found: ${esc(fn)}</div>`;return;}
   document.getElementById('bc').innerHTML=`<b>${esc(p.title)}</b> · ${p.type} · ${p.updated||p.created}`;
-  let body=p.content.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
+  // Resolve wikilink target → actual filename (handle display-title links)
+  function _resolveLink(target){
+    var t=target.replace(/^#/,'').trim();
+    // Already a valid filename?
+    if(D.pages.find(function(x){return x.filename===t+'.md'||x.filename===t;}))return t+'.md';
+    // Try as a display title
+    var byTitle=D.pages.find(function(x){return x.title===t;});
+    if(byTitle)return byTitle.filename;
+    // Try slug matching
+    var slug=t.toLowerCase().replace(/[^\w\s-]/g,'').replace(/[\s_]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+    var bySlug=D.pages.find(function(x){return x.filename.replace('.md','').split('/').pop()===slug;});
+    if(bySlug)return bySlug.filename;
+    // Fallback: use target as-is (may 404 but link is preserved)
+    return t+'.md';
+  }
+  let body=p.content.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,function(m,target,alias){
+    return '['+alias+']('+_resolveLink(target)+')';
+  }).replace(/\[\[([^\]]+)\]\]/g,function(m,target){
+    var fn=_resolveLink(target);
+    var label=target;
+    return '['+label+']('+fn+')';
+  });
   // citation [^src-*] → 렌더 후 처리할 마커로 변환
   var citeMap={},citeN=0;
   body=body.replace(/\[\^(src-[a-z0-9-]+)\](?!:)/g,function(m,slug){
@@ -4007,9 +4033,9 @@ function buildUniverseVis(){
   var bridges=UNIVERSE_DATA.bridges||[];
   _univBridgeSet={};
   bridges.forEach(function(b){
-    if(b.source_id&&b.target_id){
-      _univBridgeSet[b.source_id+'|||'+b.target_id]=true;
-      _univBridgeSet[b.target_id+'|||'+b.source_id]=true;
+    if(b.from_node&&b.to_node){
+      _univBridgeSet[b.from_node+'|||'+b.to_node]=true;
+      _univBridgeSet[b.to_node+'|||'+b.from_node]=true;
     }
   });
 
@@ -5917,7 +5943,7 @@ function addStreamLog(text,type,active){
   _streamCollapsedLog=false;
   _streamLogItems.push({text:text,type:type||'',active:active||false});
   resetStillTimer();
-  renderLog();
+  renderStreamLog();
 }
 
 function clearStreamLog(){
@@ -5926,7 +5952,7 @@ function clearStreamLog(){
   if(el)el.innerHTML='';
 }
 
-function renderLog(){
+function renderStreamLog(){
   var el=document.getElementById('spLog');
   if(!el)return;
   var items=_streamLogItems;
@@ -5950,7 +5976,7 @@ function renderLog(){
 
 function expandLog(){
   _streamCollapsedLog=true;
-  renderLog();
+  renderStreamLog();
 }
 
 function resetStillTimer(){
