@@ -97,7 +97,7 @@ WORD_RE = re.compile(r"[\w]+")
 def _resolve(project: str | None) -> "project_registry.Project":
     """Resolve project slug → Project. Empty/None falls back to active/legacy."""
     slug = (project or "").strip() or None
-    return project_registry.get_project(slug)
+    return project_registry.get_project(slug, require_storage=True)
 
 
 def _rel_to_repo(p: Path) -> str:
@@ -188,7 +188,7 @@ def list_projects() -> dict:
     """List all Memex projects (multi-project) plus legacy if present.
 
     Returns the active project slug and an array of {slug, title, is_legacy,
-    description, model, wiki_dir, raw_dir}. Use the slug as `project` in
+    description, wiki_dir, raw_dir, health}. Use the slug as `project` in
     other tools, or pass an empty string to use the active project.
     """
     out: list[dict] = []
@@ -198,7 +198,7 @@ def list_projects() -> dict:
             "title": p.title,
             "is_legacy": p.is_legacy,
             "description": p.description,
-            "model": p.model,
+            "health": project_registry.project_health(p),
             "wiki_dir": _rel_to_repo(p.wiki_dir),
             "raw_dir": _rel_to_repo(p.raw_dir),
         })
@@ -211,7 +211,7 @@ def list_projects() -> dict:
                 "title": lp.title,
                 "is_legacy": True,
                 "description": "Legacy single-project layout",
-                "model": lp.model,
+                "health": project_registry.project_health(lp),
                 "wiki_dir": _rel_to_repo(lp.wiki_dir),
                 "raw_dir": _rel_to_repo(lp.raw_dir),
             }
@@ -223,6 +223,12 @@ def list_projects() -> dict:
         "legacy": legacy_info,
         "has_projects": project_registry.has_projects(),
     }
+
+
+@mcp.tool()
+def reconcile_projects(apply: bool = False) -> dict:
+    """Report registry/disk drift; with apply=True, move empty orphan dirs to trash."""
+    return project_registry.reconcile_projects(apply=apply)
 
 
 @mcp.tool()
@@ -482,7 +488,6 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
     wiki/index.md and wiki/log.md, and call `git_commit`.
     """
     proj = _resolve(project)
-    proj.raw_dir.mkdir(parents=True, exist_ok=True)
     target = (proj.raw_dir / filename).resolve()
     base = proj.raw_dir.resolve()
     if base != target and base not in target.parents:
@@ -530,7 +535,6 @@ def create_page(
         _validate_process_dimension(proj, folder)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    proj.wiki_dir.mkdir(parents=True, exist_ok=True)
     slug = project_registry.make_slug(title)
     base = proj.wiki_dir / folder if folder else proj.wiki_dir
     base.mkdir(parents=True, exist_ok=True)
@@ -605,7 +609,6 @@ def create_folder(name: str, parent: str = "", project: str = "") -> dict:
         _validate_process_dimension(proj, folder_path)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    proj.wiki_dir.mkdir(parents=True, exist_ok=True)
     base = proj.wiki_dir / parent if parent else proj.wiki_dir
     base = base.resolve()
     if proj.wiki_dir.resolve() != base and proj.wiki_dir.resolve() not in base.parents:
@@ -715,8 +718,8 @@ def create_project(
             be normalized to lowercase hyphen-separated.
         title: Project title (display name).
         description: Optional project description (for your reference).
-        model: Optional model to use for this project ("default", or a model
-            from the available list).
+        model: Deprecated compatibility argument. Project model settings are
+            no longer persisted by project creation.
         template: Optional template name from `list_template_names()` to use.
             Empty for generic template.
     """
@@ -725,7 +728,6 @@ def create_project(
             slug_hint=slug_hint,
             title=title,
             description=description,
-            model=model,
             template=template,
         )
     except ValueError as e:
@@ -746,7 +748,6 @@ def create_project(
         "slug": proj.slug,
         "title": proj.title,
         "description": proj.description,
-        "model": proj.model,
         "template": template,
         "root": str(proj.root.relative_to(REPO_ROOT)),
     }
@@ -765,7 +766,7 @@ def switch_project(slug: str) -> dict:
             "slug": proj.slug,
             "title": proj.title,
             "description": proj.description,
-            "model": proj.model,
+            "health": project_registry.project_health(proj),
         }
     except KeyError as e:
         return {"ok": False, "error": str(e)}
@@ -782,7 +783,7 @@ def update_project_settings(
 
     Args:
         slug: The project to update.
-        model: Optional new model for this project (if omitted, not changed).
+        model: Deprecated compatibility argument. Ignored.
         title: Optional new title for this project (if omitted, not changed).
         description: Optional new description for this project (if omitted,
             not changed).
@@ -790,17 +791,19 @@ def update_project_settings(
     try:
         proj = project_registry.update_project_settings(
             slug=slug,
-            model=model,
             title=title,
             description=description,
         )
-        return {
+        out = {
             "ok": True,
             "slug": proj.slug,
             "title": proj.title,
             "description": proj.description,
-            "model": proj.model,
+            "health": project_registry.project_health(proj),
         }
+        if model is not None:
+            out["warning"] = "model is ignored; project creation no longer persists model settings"
+        return out
     except (KeyError, ValueError) as e:
         return {"ok": False, "error": str(e)}
 

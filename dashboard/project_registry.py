@@ -33,6 +33,10 @@ LEGACY_QUERY_LOG = PROJECT_ROOT / "query-log.jsonl"
 LEGACY_PLANS = PROJECT_ROOT / "plans"
 
 
+class ProjectStorageError(RuntimeError):
+    """Raised when a registered project cannot be safely used on disk."""
+
+
 @dataclass(frozen=True)
 class Project:
     slug: str                  # "" for legacy
@@ -58,6 +62,7 @@ class Project:
         for k, v in list(d.items()):
             if isinstance(v, Path):
                 d[k] = str(v.relative_to(PROJECT_ROOT)) if v.is_relative_to(PROJECT_ROOT) else str(v)
+        d["health"] = project_health(self)
         return d
 
 
@@ -151,6 +156,78 @@ def _entry_to_project(entry: dict) -> Project:
     )
 
 
+def _required_storage_paths(proj: Project) -> list[tuple[str, Path, str]]:
+    """Required paths for a project to be considered usable storage."""
+    if proj.is_legacy:
+        return [
+            ("root", proj.root, "dir"),
+            ("wiki", proj.wiki_dir, "dir"),
+            ("raw", proj.raw_dir, "dir"),
+            ("CLAUDE.md", proj.claude_md, "file"),
+        ]
+    return [
+        ("root", proj.root, "dir"),
+        ("wiki", proj.wiki_dir, "dir"),
+        ("wiki/index.md", proj.wiki_dir / "index.md", "file"),
+        ("wiki/log.md", proj.wiki_dir / "log.md", "file"),
+        ("raw", proj.raw_dir, "dir"),
+        ("CLAUDE.md", proj.claude_md, "file"),
+        (".settings.json", proj.settings_file, "file"),
+    ]
+
+
+def _path_missing(path: Path, expected: str) -> bool:
+    if expected == "dir":
+        return not path.is_dir()
+    if expected == "file":
+        return not path.is_file()
+    return not path.exists()
+
+
+def _rel_project_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def missing_storage_paths(proj: Project) -> list[str]:
+    """Relative required paths missing for the project."""
+    return [
+        name
+        for name, path, expected in _required_storage_paths(proj)
+        if _path_missing(path, expected)
+    ]
+
+
+def project_health(proj: Project) -> dict:
+    """Return non-persisted health metadata for API/UI diagnostics."""
+    missing = missing_storage_paths(proj)
+    if not missing:
+        status = "ok"
+    elif "root" in missing:
+        status = "missing_on_disk"
+    else:
+        status = "incomplete_on_disk"
+    return {
+        "status": status,
+        "ok": status == "ok",
+        "missing": missing,
+    }
+
+
+def require_project_storage(proj: Project) -> Project:
+    """Validate that a project has the required on-disk structure."""
+    health = project_health(proj)
+    if health["ok"]:
+        return proj
+    missing = ", ".join(health["missing"])
+    raise ProjectStorageError(
+        f"Project storage {health['status']}: {proj.slug or '(legacy)'}"
+        + (f" (missing: {missing})" if missing else "")
+    )
+
+
 def all_raw_dirs() -> list[Path]:
     """All raw/ paths (legacy + each project). Used for write-protection checks."""
     out = [LEGACY_RAW]
@@ -186,29 +263,116 @@ def has_projects() -> bool:
     return bool(reg.get("projects"))
 
 
-def get_project(slug: str | None = None) -> Project:
+def get_project(slug: str | None = None, *, require_storage: bool = False) -> Project:
     """Get project by slug. Returns legacy project if missing or projects.json is empty.
 
     Args:
         slug: specific project slug. If None, uses active. Falls back to legacy.
+        require_storage: if True, validate required on-disk paths before returning.
     """
     reg = _load_registry()
     projects = reg.get("projects", [])
     if not projects:
         # projects.json empty -> legacy
-        return _legacy_project()
+        proj = _legacy_project()
+        return require_project_storage(proj) if require_storage else proj
 
     target = slug or reg.get("active")
     if not target:
         # active unspecified but projects exist -> fallback to first
-        return _entry_to_project(projects[0])
+        proj = _entry_to_project(projects[0])
+        return require_project_storage(proj) if require_storage else proj
 
     for e in projects:
         if e.get("slug") == target:
-            return _entry_to_project(e)
+            proj = _entry_to_project(e)
+            return require_project_storage(proj) if require_storage else proj
 
     # slug mismatch -> exception instead of silent legacy fallback
     raise KeyError(f"Project not found: {target}")
+
+
+def _direct_project_dirs() -> list[Path]:
+    if not PROJECTS_DIR.is_dir():
+        return []
+    return [
+        p for p in sorted(PROJECTS_DIR.iterdir())
+        if p.is_dir() and not p.name.startswith(".")
+    ]
+
+
+def _dir_has_files(path: Path) -> bool:
+    if not path.exists():
+        return False
+    return any(p.is_file() for p in path.rglob("*"))
+
+
+def _unique_trash_dest(slug: str) -> Path:
+    trash = PROJECTS_DIR / ".trash"
+    trash.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    dest = trash / f"{slug}-{ts}"
+    n = 0
+    while dest.exists():
+        n += 1
+        dest = trash / f"{slug}-{ts}-{n}"
+    return dest
+
+
+def reconcile_projects(apply: bool = False) -> dict:
+    """Inspect registry/disk drift and optionally move empty orphan dirs to trash.
+
+    This never deletes data. Only orphan directories with no files are moved when
+    apply=True; missing registered projects and non-empty orphans are reported.
+    """
+    reg = _load_registry()
+    entries = reg.get("projects", [])
+    registered = {e.get("slug") for e in entries if e.get("slug")}
+
+    missing_on_disk: list[dict] = []
+    incomplete_on_disk: list[dict] = []
+    for e in entries:
+        proj = _entry_to_project(e)
+        health = project_health(proj)
+        item = {
+            "slug": proj.slug,
+            "title": proj.title,
+            "root": _rel_project_path(proj.root),
+            "missing": health["missing"],
+        }
+        if health["status"] == "missing_on_disk":
+            missing_on_disk.append(item)
+        elif health["status"] == "incomplete_on_disk":
+            incomplete_on_disk.append(item)
+
+    orphan_on_disk: list[dict] = []
+    moved: list[dict] = []
+    for child in _direct_project_dirs():
+        if child.name in registered:
+            continue
+        has_files = _dir_has_files(child)
+        item = {
+            "slug": child.name,
+            "root": _rel_project_path(child),
+            "empty": not has_files,
+            "action": "move_to_trash" if not has_files else "report_only",
+        }
+        if apply and not has_files:
+            dest = _unique_trash_dest(f"orphan-{child.name}")
+            shutil.move(str(child), str(dest))
+            item["moved_to"] = _rel_project_path(dest)
+            moved.append(item)
+        else:
+            orphan_on_disk.append(item)
+
+    return {
+        "ok": True,
+        "dry_run": not apply,
+        "missing_on_disk": missing_on_disk,
+        "incomplete_on_disk": incomplete_on_disk,
+        "orphan_on_disk": orphan_on_disk,
+        "moved": moved,
+    }
 
 
 # ─── CRUD ───
@@ -407,20 +571,17 @@ def delete_project(slug: str, confirm: bool = False) -> dict:
         return {"ok": False, "error": f"Project not found: {slug}"}
 
     src = PROJECTS_DIR / slug
-    trash = PROJECTS_DIR / ".trash"
-    trash.mkdir(exist_ok=True)
-    # ms + counter on collision. shutil.move, if dest is an existing directory,
-    # places src inside it, so a unique name must be ensured.
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    dest = trash / f"{slug}-{ts}"
-    n = 0
-    while dest.exists():
-        n += 1
-        dest = trash / f"{slug}-{ts}-{n}"
-    shutil.move(str(src), str(dest))
+    dest = None
+    if src.exists():
+        # shutil.move places src inside an existing directory, so dest must be unique.
+        dest = _unique_trash_dest(slug)
+        shutil.move(str(src), str(dest))
 
     reg["projects"] = [e for e in projects if e.get("slug") != slug]
     if reg.get("active") == slug:
         reg["active"] = reg["projects"][0]["slug"] if reg["projects"] else None
     _save_registry(reg)
-    return {"ok": True, "moved_to": str(dest.relative_to(PROJECT_ROOT))}
+    out = {"ok": True, "moved_to": _rel_project_path(dest) if dest else None}
+    if dest is None:
+        out["warning"] = f"projects/{slug} was already missing on disk; registry entry removed"
+    return out

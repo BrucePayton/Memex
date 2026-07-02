@@ -173,7 +173,7 @@ RAW_ABS = os.path.abspath(str(RAW_DIR))
 def _resolve_project_body(body):
     """Extract project slug from POST body -> Project. Unknown slug raises KeyError."""
     slug = (body.get("project") or "").strip() or None
-    return project_registry.get_project(slug)
+    return project_registry.get_project(slug, require_storage=True)
 
 
 # --- slug generation (unicode support) ---
@@ -702,7 +702,7 @@ def _handle_stream(handler, events):
 def _op_prompt_for(operation, **kw):
     """Map operation name + kwargs to the same prompt the blocking version uses."""
     if operation == "lint":
-        proj = project_registry.get_project(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         today = datetime.now().strftime("%Y-%m-%d")
         from index_strategy import get_index_instruction
         idx_inst = get_index_instruction(proj.wiki_dir)
@@ -762,9 +762,8 @@ Report format:
 Summarize fixes by Critical / Warning / Info."""
 
     if operation == "reflect":
-        from project_registry import get_project as get_proj
         from index_strategy import get_index_instruction
-        proj = get_proj(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         reflect_dir = proj.reflect_reports
         reflect_dir.mkdir(parents=True, exist_ok=True)
         window = kw.get("window", "last-10-ingests")
@@ -802,7 +801,7 @@ Produce:
 Save the result to {report_path}."""
 
     if operation == "review_refresh":
-        proj = project_registry.get_project(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         filename = kw.get("filename", "")
         today = datetime.now().strftime("%Y-%m-%d")
         return f"""Read wiki/{filename} and:
@@ -833,7 +832,7 @@ Report what you changed."""
         folder = kw.get("folder", "")
         slug = kw.get("slug", "")
         report_rel = kw.get("report_rel", "")
-        proj = project_registry.get_project(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         from index_strategy import get_index_instruction
         idx_inst = get_index_instruction(proj.wiki_dir)
         folder_inst = f" Place any new pages under wiki/{folder}/." if folder else ""
@@ -853,7 +852,7 @@ When finished:
 - [[a]] ↔ [[b]]"""
 
     if operation == "write":
-        proj = project_registry.get_project(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         topic = kw.get("topic", "")
         length = kw.get("length", "medium")
         style = kw.get("style", "blog")
@@ -882,7 +881,7 @@ Requirements:
 Output only the article (no meta commentary)."""
 
     if operation == "compare":
-        proj = project_registry.get_project(kw.get("project_slug"))
+        proj = project_registry.get_project(kw.get("project_slug"), require_storage=True)
         page_a = kw.get("page_a", "")
         page_b = kw.get("page_b", "")
         return f"""Read wiki/{page_a} and wiki/{page_b}, then compare them.
@@ -898,7 +897,7 @@ Include [^src-*] citations for claims; draw on sources from both pages."""
 
 
 def stream_lint(project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = _op_prompt_for("lint", project_slug=project_slug)
     yield {"type": "progress", "phase": "starting", "message": "Starting lint…", "elapsed": 0}
     for evt in run_claude_streaming(prompt, project=proj):
@@ -912,7 +911,7 @@ def stream_lint(project_slug=None):
 
 
 def stream_lint_fix(project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = _op_prompt_for("lint_fix")
     yield {"type": "progress", "phase": "starting", "message": "Starting lint fix…", "elapsed": 0}
     for evt in run_claude_streaming(prompt, project=proj):
@@ -924,7 +923,7 @@ def stream_lint_fix(project_slug=None):
 
 
 def stream_reflect(window="last-10-ingests", project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = _op_prompt_for("reflect", project_slug=project_slug, window=window)
     yield {"type": "progress", "phase": "starting", "message": "Starting reflect…", "elapsed": 0}
     for evt in run_claude_streaming(prompt, project=proj):
@@ -938,7 +937,7 @@ def stream_reflect(window="last-10-ingests", project_slug=None):
 
 
 def stream_review_refresh(filename, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = _op_prompt_for("review_refresh", project_slug=project_slug, filename=filename)
     yield {"type": "progress", "phase": "starting", "message": f"Refreshing {filename}…", "elapsed": 0}
     for evt in run_claude_streaming(prompt, project=proj):
@@ -951,7 +950,7 @@ def stream_review_refresh(filename, project_slug=None):
 
 
 def stream_fix_citations(page_filename, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     filepath = proj.wiki_dir / page_filename
     if not filepath.exists():
         yield {"type": "error", "message": "Page not found", "elapsed": 0}
@@ -968,11 +967,9 @@ def stream_fix_citations(page_filename, project_slug=None):
 
 
 def stream_ingest(title, content, folder="", project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     raw_dir = proj.raw_dir
     wiki_dir = proj.wiki_dir
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    wiki_dir.mkdir(parents=True, exist_ok=True)
 
     slug = make_slug(title)
     raw_path = dedupe_raw_path(raw_dir / f"{slug}.md")
@@ -1000,7 +997,7 @@ def stream_write(topic, length="medium", style="blog", project_slug=None):
     if not topic or not topic.strip():
         yield {"type": "error", "message": "Topic is required", "elapsed": 0}
         return
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = _op_prompt_for("write", project_slug=project_slug, topic=topic, length=length, style=style)
     yield {"type": "progress", "phase": "starting", "message": f"Writing: {topic}…", "elapsed": 0}
     for evt in run_claude_streaming(prompt, project=proj):
@@ -1011,7 +1008,7 @@ def stream_compare(page_a, page_b, save_as="", project_slug=None):
     if not page_a or not page_b:
         yield {"type": "error", "message": "Both pages required", "elapsed": 0}
         return
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
     fa = wiki_dir / page_a
     fb = wiki_dir / page_b
@@ -1153,13 +1150,13 @@ def _normalize_ui_lang(code):
     return None
 
 
-def _resolve_project(slug=None):
+def _resolve_project(slug=None, *, require_storage=True):
     """slug → Project.
 
     - slug is empty/None: fallback active -> legacy (project_registry.get_project default behavior)
     - slug has a specific value but not in registry: propagate KeyError (caller handles as 404)
     """
-    return project_registry.get_project(slug or None)
+    return project_registry.get_project(slug or None, require_storage=require_storage)
 
 
 def build_wiki_data(project_slug=None, ui_lang=None):
@@ -3032,11 +3029,9 @@ def _diff_snapshots(before, after):
 
 
 def do_ingest(title, content, folder="", project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     raw_dir = proj.raw_dir
     wiki_dir = proj.wiki_dir
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    wiki_dir.mkdir(parents=True, exist_ok=True)
 
     slug = make_slug(title)
     raw_path = dedupe_raw_path(raw_dir / f"{slug}.md")
@@ -3099,7 +3094,7 @@ When finished:
 
 
 def do_query(question, project_slug=None, lang=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     q = (question or "").strip()
     if not q:
         return {
@@ -3154,9 +3149,8 @@ def do_query_save(title, content, project_slug=None):
     """Save Query answer as analysis page in wiki"""
     if not title or not title.strip():
         return {"ok": False, "error": "Title is required"}
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
-    wiki_dir.mkdir(parents=True, exist_ok=True)
     slug = make_slug(title)
     filepath = wiki_dir / f"{slug}.md"
     n = 2
@@ -3189,7 +3183,7 @@ tags:
 
 def do_fix_citations(page_filename, project_slug=None):
     """Have Claude fix citations for a specific page"""
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     filepath = proj.wiki_dir / page_filename
     if not filepath.exists():
         return {"ok": False, "error": "Page not found"}
@@ -3257,7 +3251,7 @@ def _collect_reflect_context(window, project=None):
 
 
 def do_reflect(window="last-10-ingests", project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     reflect_dir = proj.reflect_reports
     reflect_dir.mkdir(parents=True, exist_ok=True)
     ctx = _collect_reflect_context(window, project=proj)
@@ -3348,7 +3342,7 @@ Include parse markers before sections: SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGG
 
 def get_last_reflect_date(project_slug=None):
     """Date of last reflect report"""
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     d = proj.reflect_reports
     if not d.is_dir():
         return None
@@ -3359,7 +3353,7 @@ def get_last_reflect_date(project_slug=None):
 
 
 def do_lint(project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     today = datetime.now().strftime("%Y-%m-%d")
     idx_inst = get_index_instruction(proj.wiki_dir)
     prompt = f"""{idx_inst}
@@ -3403,7 +3397,7 @@ Report format:
 
 
 def do_lint_fix(project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = """You just ran the CLAUDE.md Lint checklist. Fix every issue found now:
 
 - Fix missing/invalid frontmatter
@@ -3447,7 +3441,7 @@ def _scan_wiki_pages(wiki_dir):
 
 def validate_links_api(project_slug=None):
     """Scan all wiki pages for broken links, orphan references, missing citations."""
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
     issues = {
         "broken_links": [],      # [[unknown-page]] that don't match any file
@@ -3526,7 +3520,7 @@ def validate_links_api(project_slug=None):
 
 def fix_links_batch_api(project_slug, auto_create=False, alias_map=None):
     """Batch fix broken links across wiki pages."""
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
     alias_map = alias_map or {}
 
@@ -3590,7 +3584,7 @@ status: active
 def do_write(topic, length="medium", style="blog", project_slug=None):
     if not topic or not topic.strip():
         return {"ok": False, "error": "Topic is required"}
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     word_map = {"short": "~300 words", "medium": "~700 words", "long": "~1500 words"}
     style_map = {
         "blog": "Blog tone (friendly, clear)",
@@ -3622,7 +3616,7 @@ Output only the article (no meta commentary)."""
 def do_compare(page_a, page_b, save_as="", project_slug=None):
     if not page_a or not page_b:
         return {"ok": False, "error": "Both pages required"}
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
     fa = wiki_dir / page_a
     fb = wiki_dir / page_b
@@ -3672,7 +3666,7 @@ tags:
 # ─── Spaced Review ───
 
 def do_review_list(days=30, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     from datetime import timedelta
     cutoff = datetime.now() - timedelta(days=days)
     stale = []
@@ -3707,7 +3701,7 @@ def do_review_list(days=30, project_slug=None):
 
 
 def do_review_refresh(filename, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     fp = proj.wiki_dir / filename
     if not fp.exists():
         return {"ok": False, "error": "Page not found"}
@@ -3728,7 +3722,7 @@ If nothing new applies, reply "No new updates; refreshed last_updated only." and
 # ─── Marp Slide Export ───
 
 def do_slides(page_filename, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     fp = proj.wiki_dir / page_filename
     if not fp.exists():
         return {"ok": False, "error": "Page not found"}
@@ -3818,7 +3812,7 @@ def _tfidf_wiki_search(proj, query, top_k=10):
 
 def do_search(query, top_k=10, project_slug=None):
     """TF-IDF wiki search (stdlib only)."""
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     scored = _tfidf_wiki_search(proj, query, top_k)
     return {"ok": True, "project": proj.slug, "results": scored}
 
@@ -3826,7 +3820,7 @@ def do_search(query, top_k=10, project_slug=None):
 # ─── Related Sources Suggestion ───
 
 def do_suggest_sources(project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     prompt = """Read wiki/index.md and recent wiki/log.md to judge coverage gaps.
 
 Propose 5–10 concrete search terms or paper titles worth ingesting next:
@@ -4252,7 +4246,7 @@ def do_assistant_chat(question, lang="en", history=None, project=None):
     wiki_context = ""
     if project:
         try:
-            proj = project_registry.get_project(project)
+            proj = project_registry.get_project(project, require_storage=True)
             wiki_dir = getattr(proj, "wiki_dir", None)
             if wiki_dir and wiki_dir.exists():
                 parts = []
@@ -4382,6 +4376,10 @@ def delete_project_api(slug, confirm):
     return project_registry.delete_project(slug, confirm=confirm)
 
 
+def reconcile_projects_api(apply=False):
+    return project_registry.reconcile_projects(apply=bool(apply))
+
+
 def list_schedules_api():
     return {"ok": True, "schedules": _sched_load()[0]}
 
@@ -4443,8 +4441,7 @@ def toggle_schedule_api(schedule_id: str):
 # ─── CRUD ───
 
 def create_folder(name, parent="", project_slug=None):
-    proj = project_registry.get_project(project_slug)
-    proj.wiki_dir.mkdir(parents=True, exist_ok=True)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     base = proj.wiki_dir / parent if parent else proj.wiki_dir
     folder = base / name
     folder.mkdir(parents=True, exist_ok=True)
@@ -4454,9 +4451,8 @@ def create_folder(name, parent="", project_slug=None):
 def create_page(title, page_type, folder="", content="", project_slug=None):
     if not title or not title.strip():
         return {"ok": False, "error": "Title is required"}
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     wiki_dir = proj.wiki_dir
-    wiki_dir.mkdir(parents=True, exist_ok=True)
     slug = make_slug(title)
     base = wiki_dir / folder if folder else wiki_dir
     base.mkdir(parents=True, exist_ok=True)
@@ -4479,7 +4475,7 @@ tags: []
 
 
 def update_page(filename, content, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     filepath = proj.wiki_dir / filename
     try:
         assert_writable(filepath)
@@ -4492,7 +4488,7 @@ def update_page(filename, content, project_slug=None):
 
 
 def delete_page(filename, project_slug=None):
-    proj = project_registry.get_project(project_slug)
+    proj = project_registry.get_project(project_slug, require_storage=True)
     filepath = proj.wiki_dir / filename
     try:
         assert_writable(filepath)
@@ -4716,15 +4712,19 @@ class Handler(SimpleHTTPRequestHandler):
             # unknown slug -> early 404
             if q_project is not None:
                 try:
-                    project_registry.get_project(q_project)
+                    project_registry.get_project(q_project, require_storage=True)
                 except KeyError as e:
                     return self._json({"ok": False, "error": str(e)}, code=404)
+                except project_registry.ProjectStorageError as e:
+                    return self._json({"ok": False, "error": str(e)}, code=409)
             if path == "/api/status":
                 return self._json(check_status())
             if path == "/api/projects":
                 return self._json(list_projects_api())
             if path == "/api/projects/active":
                 return self._json(get_active_project_api())
+            if path == "/api/projects/reconcile":
+                return self._json(reconcile_projects_api(apply=False))
             if path == "/api/templates":
                 names = project_registry.list_template_names()
                 out = [{"name": "", "label": "generic", "folders": project_registry.recommended_folders("")}]
@@ -4959,7 +4959,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/raw/file":
                 rp = (qs.get("path", [""])[0] or "").strip()
                 try:
-                    proj = project_registry.get_project(q_project)
+                    proj = project_registry.get_project(q_project, require_storage=True)
                     raw_root = proj.raw_dir.resolve()
                     rel = (rp or "").replace("\\", "/").strip().lstrip("/")
                     if not rel or ".." in rel.split("/"):
@@ -5014,6 +5014,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 except BrokenPipeError:
                     pass
+                except project_registry.ProjectStorageError as e:
+                    self._send_error(409, str(e))
                 except Exception as e:
                     import traceback
                     print(f"[ERROR] serving raw file: {e}\n{traceback.format_exc()[:800]}")
@@ -5052,6 +5054,11 @@ class Handler(SimpleHTTPRequestHandler):
         except BrokenPipeError:
             # client disconnected — silently ignore
             pass
+        except project_registry.ProjectStorageError as e:
+            try:
+                self._json({"ok": False, "error": str(e), "endpoint": path}, code=409)
+            except Exception:
+                pass
         except Exception as e:
             import traceback
             err_msg = f"{type(e).__name__}: {e}"
@@ -5113,7 +5120,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/page/delete":
                 return self._json(delete_page(body.get("filename", ""), project_slug=p_slug))
             if path == "/api/schema":
-                proj = project_registry.get_project(p_slug)
+                proj = project_registry.get_project(p_slug, require_storage=True)
                 proj.claude_md.write_text(body.get("content", ""), encoding="utf-8")
                 return self._json({"ok": True, "project": proj.slug})
             if path == "/api/revert":
@@ -5189,7 +5196,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/cli/test":
                 return self._json(api_cli_test())
             if path == "/api/index/rebuild":
-                proj = project_registry.get_project(p_slug)
+                proj = project_registry.get_project(p_slug, require_storage=True)
                 result = rebuild_index(proj.wiki_dir)
                 if result["ok"]:
                     git_mgr._stage_all(project=proj)
@@ -5258,6 +5265,10 @@ class Handler(SimpleHTTPRequestHandler):
                     body.get("slug", ""),
                     bool(body.get("confirm", False)),
                 ))
+            if path == "/api/projects/reconcile":
+                return self._json(reconcile_projects_api(
+                    apply=bool(body.get("apply", False)),
+                ))
             # ─── Knowledge Universe config (POST) ──────────────────────
             if path == "/api/graph/universe-config":
                 try:
@@ -5273,6 +5284,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
         except BrokenPipeError:
             pass
+        except project_registry.ProjectStorageError as e:
+            try:
+                self._json({"ok": False, "error": str(e), "endpoint": path}, code=409)
+            except Exception:
+                pass
         except Exception as e:
             import traceback
             err_msg = f"{type(e).__name__}: {e}"
