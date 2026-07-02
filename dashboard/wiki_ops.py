@@ -280,7 +280,7 @@ def run_wiki_operation(
     timeout: int | None = None,
     settings: dict | None = None,
 ) -> tuple[bool, str, str]:
-    """Run a wiki operation via unified LLM provider (CLI by default for tool-based ops).
+    """Run a wiki operation via the unified CLI runner.
 
     Returns (ok, stdout, stderr).
     """
@@ -292,7 +292,6 @@ def run_wiki_operation(
         settings=settings,
         project=proj,
         timeout=timeout,
-        force_cli=True,  # wiki ops always need tool use
     )
 
 

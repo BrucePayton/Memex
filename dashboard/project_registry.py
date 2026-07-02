@@ -47,7 +47,6 @@ class Project:
     reflect_reports: Path
     plans_dir: Path
     query_log: Path
-    model: str = "default"
     description: str = ""
     created: str = ""
     last_used: str = ""
@@ -92,7 +91,7 @@ def _save_registry(reg: dict) -> None:
 
 from dashboard.models import make_slug
 
-# --- Project settings file (model etc.) ---
+# ─── 프로젝트 설정 파일 ───
 
 def _load_project_settings(settings_path: Path) -> dict:
     if not settings_path.exists():
@@ -113,7 +112,6 @@ def _save_project_settings(settings_path: Path, settings: dict) -> None:
 # --- Project instantiation ---
 
 def _legacy_project() -> Project:
-    settings = _load_project_settings(LEGACY_SETTINGS)
     return Project(
         slug="",
         title="(legacy)",
@@ -127,16 +125,12 @@ def _legacy_project() -> Project:
         reflect_reports=LEGACY_REFLECT_REPORTS,
         plans_dir=LEGACY_PLANS,
         query_log=LEGACY_QUERY_LOG,
-        model=settings.get("model", "default"),
     )
 
 
 def _entry_to_project(entry: dict) -> Project:
     slug = entry["slug"]
     root = PROJECTS_DIR / slug
-    settings = _load_project_settings(root / ".settings.json")
-    # model priority: .settings.json > registry entry > default
-    model = settings.get("model") or entry.get("model") or "default"
     return Project(
         slug=slug,
         title=entry.get("title", slug),
@@ -150,7 +144,6 @@ def _entry_to_project(entry: dict) -> Project:
         reflect_reports=root / "reflect-reports",
         plans_dir=root / "plans",
         query_log=root / "query-log.jsonl",
-        model=model,
         description=entry.get("description", ""),
         created=entry.get("created", ""),
         last_used=entry.get("last_used", ""),
@@ -283,40 +276,23 @@ def _copy_template(template_name: str, dest: Path) -> None:
         return
     dest.write_text(src_file.read_text("utf-8"), encoding="utf-8")
 
-
-# model validation hook injected from server.py. Default passes (legacy compat).
-# Return True to allow, False to deny.
-_model_validator = lambda m: True  # noqa: E731
-
-
-def set_model_validator(fn) -> None:
-    """Inject model allowlist validator (to avoid circular import with server)."""
-    global _model_validator
-    _model_validator = fn
-
-
 def create_project(
     slug_hint: str,
     title: str,
     description: str = "",
-    model: str = "default",
     template: str = "",
 ) -> Project:
     """Create new project.
 
-    - slug_hint -> make_slug -> duplicate check
-    - model must pass validator injected via `set_model_validator`
-    - create projects/<slug>/ directory + default files
-    - register in projects.json, set as active
+    - slug_hint → make_slug → 중복 체크
+    - projects/<slug>/ 디렉터리 + 기본 파일 생성
+    - projects.json에 등록, active로 설정
     """
     if not title or not title.strip():
         raise ValueError("title is required")
     slug = make_slug(slug_hint or title)
     if not slug:
         raise ValueError("invalid slug")
-    if not _model_validator(model):
-        raise ValueError(f"invalid model: {model!r}")
-
     reg = _load_registry()
     for e in reg.get("projects", []):
         if e.get("slug") == slug:
@@ -371,7 +347,7 @@ def create_project(
     (root / "CLAUDE.md").write_text(content, encoding="utf-8")
 
     # .settings.json
-    _save_project_settings(root / ".settings.json", {"model": model})
+    _save_project_settings(root / ".settings.json", {})
 
     # empty query-log
     (root / "query-log.jsonl").write_text("", encoding="utf-8")
@@ -381,7 +357,6 @@ def create_project(
         "slug": slug,
         "title": title,
         "description": description,
-        "model": model,
         "created": today,
         "last_used": today,
         "template": template or "",
@@ -405,20 +380,11 @@ def switch_project(slug: str) -> Project:
     raise KeyError(f"Project not found: {slug}")
 
 
-def update_project_settings(slug: str, *, model: str | None = None, title: str | None = None, description: str | None = None) -> Project:
+def update_project_settings(slug: str, *, title: str | None = None, description: str | None = None) -> Project:
     reg = _load_registry()
     projects = reg.get("projects", [])
     for e in projects:
         if e.get("slug") == slug:
-            if model is not None:
-                if not _model_validator(model):
-                    raise ValueError(f"invalid model: {model!r}")
-                e["model"] = model
-                # sync with .settings.json
-                sf = PROJECTS_DIR / slug / ".settings.json"
-                s = _load_project_settings(sf)
-                s["model"] = model
-                _save_project_settings(sf, s)
             if title is not None:
                 e["title"] = title
             if description is not None:

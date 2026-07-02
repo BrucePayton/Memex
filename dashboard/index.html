@@ -620,7 +620,6 @@ body.universe-view .idx-banner{display:none;}
       <button class="h-icon-btn" onclick="openNewProjectModal()" title="New project" aria-label="New project">+</button>
       <button class="h-icon-btn danger" id="projDeleteBtn" onclick="deleteCurrentProject()" title="Delete project" aria-label="Delete project" style="display:none">×</button>
     </div>
-    <select class="h-model-select" id="modelSelect" onchange="onModelChange()" title="Claude model"></select>
     <span class="llm-chip" id="llmChip" role="note" style="display:none"></span>
     <div class="hstats" id="hstats"></div>
     <button id="langToggle" class="h-side-toggle" onclick="toggleLang()" title="Language" style="margin-left:4px;font-family:var(--font);font-weight:600">EN</button>
@@ -707,7 +706,6 @@ body.universe-view .idx-banner{display:none;}
     <option value="personal-notes">personal-notes</option>
   </select></div>
   <div class="field"><label data-i18n="modal_folders_label">Suggested folders (auto)</label><div id="newProjFolderPreview" style="font-size:11px;color:var(--muted);font-family:var(--mono);padding:8px 10px;background:var(--bg3);border-radius:var(--r-sm);border:1px solid var(--border)" data-i18n="modal_loading">loading...</div></div>
-  <div class="field"><label data-i18n="header_claude_model">Model</label><select id="newProjModel"></select></div>
   <div class="actions"><button type="button" data-i18n="btn_cancel" onclick="closeModals()">Cancel</button><button type="button" class="primary" data-i18n="btn_create" onclick="doCreateProject()">Create</button></div>
 </div></div>
 <div class="modal-bg" id="modalDeleteProject"><div class="modal"><h3 data-i18n="modal_delete_project">Delete Project</h3>
@@ -740,7 +738,7 @@ const I18N={
     field_title:'Title', field_content:'Content (Markdown)', field_folder:'Target Folder',
     ingest_btn:'Ingest with Claude', ingest_processing:'Calling Claude CLI...',
     ingest_done:'Ingest Complete',
-    query_title:'Query', query_desc:'Ask questions grounded in your wiki. Claude CLI reads pages via tools; OpenAI-compatible HTTP uses server-retrieved excerpts (TF-IDF) plus your configured model.',
+    query_title:'Query', query_desc:'Ask questions grounded in your wiki. The configured CLI reads relevant pages via tools and synthesizes an answer with wiki citations.',
     field_question:'Question', query_btn:'Ask Claude', query_processing:'Claude is searching the wiki...',
     query_save_to_wiki:'Save to wiki', query_save_placeholder:'Page title (e.g. Self-Attention analysis)',
     lint_title:'Wiki Lint', lint_desc:'Check for contradictions, orphan pages, missing citations, and data gaps.',
@@ -872,7 +870,7 @@ const I18N={
     universe_path_panel_cross:'cross-project',
     universe_export_path_title:'Universe Path Export',
     nav_raw:'Raw sources',
-    nav_settings:'AI & CLI settings',
+    nav_settings:'CLI settings',
     raw_loading:'Loading…',
     raw_empty:'No raw files in this project.',
     raw_viewer_title:'Raw file',
@@ -880,7 +878,7 @@ const I18N={
     raw_sources_strip_title:'Source files (raw)',
     raw_view_action:'View raw',
     raw_open:'Open',
-    settings_ai_title:'AI provider & CLI',
+    settings_ai_title:'CLI settings',
     settings_cli_binary:'CLI command',
     settings_cli_type:'CLI Type',
     settings_cli_type_claude:'Claude Code',
@@ -888,30 +886,14 @@ const I18N={
     settings_cli_type_claude_ark:'Claude Code (Ark Proxy)',
     settings_cli_type_claw_anthropic_ark:'Claw Code (Anthropic Ark Proxy)',
     settings_extra_args:'Extra CLI args (JSON array of flags)',
-    settings_ai_provider:'Provider',
-    settings_provider_cli:'Claude CLI (tools)',
-    settings_provider_openai:'OpenAI-compatible HTTP',
-    settings_openai_url:'API base URL',
-    settings_openai_model:'Model id',
-    settings_openai_key:'API key',
-    settings_key_placeholder:'leave blank to keep saved key',
-    settings_save_ai:'Save AI settings',
-    settings_test_ai:'Test HTTP connection',
+    settings_save_ai:'Save CLI settings',
     settings_test_cli:'Test CLI',
     settings_test_e2e:'Test End-to-End',
-    settings_preset_label:'HTTP vendor preset',
-    settings_preset_apply:'Apply',
-    settings_preset_custom:'Custom',
-    settings_http_temp:'Temperature',
-    settings_http_maxtok:'Max tokens',
-    settings_http_maxtok_hint:'0 = omit (provider default)',
     settings_cli_path_extra:'Extra PATH (one dir per line)',
     settings_cli_path_extra_hint:'Prepended for subprocess only. Use for Homebrew/nvm/global npm bin when the dashboard PATH is minimal.',
     settings_quick_cli:'Vendor wrappers',
     settings_vendor_wrap_hint:'Run scripts/install-memex-cli-wrappers.sh once. Creates symlinks: claude → ~/.claude-*-env, claw → ~/.claw-*-env. Then pick a shortcut or put ~/bin in Extra PATH.',
-    settings_profile_active:'Named profile',
-    settings_profile_none:'(none)',
-    settings_intro:'Set the CLI binary, optional flag JSON, and OpenAI-compatible HTTP (API keys never leave the server). Ingest and Lint still need a tool-capable Claude CLI.',
+    settings_intro:'Set the CLI binary, optional flag JSON, and extra PATH entries used by the dashboard subprocess.',
     ingest_result_created:'created', ingest_result_modified:'modified',
     lang_next_en:'EN', lang_next_zh:'中文',
     lang_current_en:'EN', lang_current_zh:'中文',
@@ -961,12 +943,11 @@ const I18N={
     modal_loading:'loading...', modal_delete_project:'Delete Project',
     modal_delete_project_desc:'The project is moved to projects/.trash/. Files are kept and can be restored manually.',
     char_title:'Open assistant', header_toggle_side:'Toggle sidebar (Cmd/Ctrl+B)', header_project:'Project (Cmd/Ctrl+P)',
-    header_new_project:'New project', header_delete_project:'Delete project', header_claude_model:'Claude model',
+    header_new_project:'New project', header_delete_project:'Delete project',
     opt_template_generic:'generic (default)',
     wiki_root:'wiki/ (root)',
     stream_cancel:'Cancel', stream_done:'Complete', stream_error:'Error', stream_cancelled:'Cancelled',
     stream_collapse:'Collapse ▼', stream_still_working:'Still working...',
-    model_desc_opus:'Highest quality (most powerful)', model_desc_sonnet:'Balanced quality/speed', model_desc_haiku:'Fast and economical', model_desc_default:'Use CLI default model',
     legacy_option:'(legacy — root wiki/)',
   },
   zh:{
@@ -979,7 +960,7 @@ const I18N={
     ingest_title:'收录来源', ingest_desc:'粘贴正文后点击收录。内容会保存到 raw/，Claude 将生成 wiki 页面。',
     field_title:'标题', field_content:'正文 (Markdown)', field_folder:'目标文件夹',
     ingest_btn:'用 Claude 收录', ingest_processing:'正在调用 Claude CLI…', ingest_done:'收录完成',
-    query_title:'问答', query_desc:'基于当前 wiki 提问。Claude CLI 通过工具读页面；OpenAI 兼容 HTTP 模式使用服务端摘录（TF-IDF）与所选模型作答。',
+    query_title:'问答', query_desc:'基于当前 wiki 提问。当前配置的 CLI 会通过工具读取相关页面，并附带 wiki 引用作答。',
     field_question:'问题', query_btn:'向 Claude 提问', query_processing:'正在搜索 wiki…',
     query_save_to_wiki:'保存到 wiki', query_save_placeholder:'页面标题（例：Self-Attention 解析）',
     lint_title:'Wiki 检查', lint_desc:'检查矛盾、孤立页面、缺失引用与数据缺口。',
@@ -1083,21 +1064,16 @@ const I18N={
     universe_path_panel_hops:'跳',
     universe_path_panel_cross:'跨项目',
     universe_export_path_title:'知识宇宙路径导出',
-    nav_raw:'原始文件', nav_settings:'AI 与 CLI 设置',
+    nav_raw:'原始文件', nav_settings:'CLI 设置',
     raw_loading:'加载中…', raw_empty:'当前项目没有 raw 文件。', raw_viewer_title:'Raw 原文',
     raw_binary_hint:'[二进制文件 — 无法预览]', raw_sources_strip_title:'原始来源 (raw)',
     raw_view_action:'查看 raw', raw_open:'打开',
-    settings_ai_title:'AI 供应商与 CLI', settings_cli_binary:'CLI 命令', settings_cli_type:'CLI 类型', settings_cli_type_claude:'Claude Code', settings_cli_type_claw:'Claw Code', settings_cli_type_claude_ark:'Claude Code (Ark Proxy)', settings_cli_type_claw_anthropic_ark:'Claw Code (Anthropic Ark Proxy)', settings_extra_args:'额外 CLI 参数（JSON 数组）',
-    settings_ai_provider:'供应商', settings_provider_cli:'Claude CLI（工具）', settings_provider_openai:'OpenAI 兼容 HTTP',
-    settings_openai_url:'API 基础 URL', settings_openai_model:'模型 ID', settings_openai_key:'API 密钥',
-    settings_key_placeholder:'留空则保留已保存的密钥', settings_save_ai:'保存 AI 设置', settings_test_ai:'测试 HTTP 连接', settings_test_e2e:'端到端测试', settings_test_cli:'测试 CLI',
-    settings_preset_label:'HTTP 供应商预设', settings_preset_apply:'填入', settings_preset_custom:'自定义',
-    settings_http_temp:'温度', settings_http_maxtok:'最大 tokens', settings_http_maxtok_hint:'0 表示不传（走供应商默认）',
+    settings_ai_title:'CLI 设置', settings_cli_binary:'CLI 命令', settings_cli_type:'CLI 类型', settings_cli_type_claude:'Claude Code', settings_cli_type_claw:'Claw Code', settings_cli_type_claude_ark:'Claude Code (Ark Proxy)', settings_cli_type_claw_anthropic_ark:'Claw Code (Anthropic Ark Proxy)', settings_extra_args:'额外 CLI 参数（JSON 数组）',
+    settings_save_ai:'保存 CLI 设置', settings_test_e2e:'端到端测试', settings_test_cli:'测试 CLI',
     settings_cli_path_extra:'额外 PATH（每行一个目录）', settings_cli_path_extra_hint:'仅附加到子进程 PATH，用于 IDE 启动时找不到 Homebrew/nvm 全局 bin。',
     settings_quick_cli:'Vendor 包装',
     settings_vendor_wrap_hint:'先运行 scripts/install-memex-cli-wrappers.sh（默认装入 ~/bin，claude → ~/.claude-*-env，claw → ~/.claw-*-env）。然后点快捷方式或把该目录填入「额外 PATH」。',
-    settings_profile_active:'命名配置', settings_profile_none:'（无）',
-    settings_intro:'配置 CLI 命令、可选参数 JSON、以及 OpenAI 兼容 HTTP（密钥仅保存在服务端）。收录与检查等仍需支持工具的 Claude CLI。',
+    settings_intro:'配置仪表盘子进程使用的 CLI 命令、可选参数 JSON 与额外 PATH。',
     ingest_result_created:'新建', ingest_result_modified:'修改',
     lang_next_en:'EN', lang_next_zh:'中文',
     lang_current_en:'EN', lang_current_zh:'中文',
@@ -1131,10 +1107,9 @@ const I18N={
     modal_new_project:'新建项目', modal_new_project_desc:'创建带独立 wiki/raw/CLAUDE.md 的新主题项目。',
     modal_proj_slug:'短名（可选）', modal_proj_slug_ph:'自动生成（字母数字与连字符）', modal_desc:'描述', modal_desc_ph:'项目用途', modal_template:'模板', modal_folders_label:'将自动创建的推荐文件夹', modal_loading:'加载中…',
     modal_delete_project:'删除项目', modal_delete_project_desc:'项目会移到 projects/.trash/。文件仍保留，可手动恢复。',
-    char_title:'打开助手', header_toggle_side:'切换侧栏 (Cmd/Ctrl+B)', header_project:'项目 (Cmd/Ctrl+P)',     header_new_project:'新建项目', header_delete_project:'删除项目', header_claude_model:'Claude 模型',
+    char_title:'打开助手', header_toggle_side:'切换侧栏 (Cmd/Ctrl+B)', header_project:'项目 (Cmd/Ctrl+P)',     header_new_project:'新建项目', header_delete_project:'删除项目',
     opt_template_generic:'generic（默认）',
     wiki_root:'wiki/（根）',
-    model_desc_opus:'最高质量（最强大）', model_desc_sonnet:'平衡质量与速度', model_desc_haiku:'快速经济', model_desc_default:'使用 CLI 默认模型',
     legacy_option:'(legacy — 根 wiki/)',
   },
 };
@@ -1145,7 +1120,6 @@ if(!I18N[LANG]){
 }
 function htmlLang(){return LANG==='zh'?'zh-Hans':LANG;}
 function t(k){return (I18N[LANG]&&I18N[LANG][k])||(I18N.en[k])||k;}
-function getModelDesc(id){var k=id.startsWith('claude-')?id.slice(7):'default';if(k.indexOf('-')>=0)k=k.slice(0,k.indexOf('-'));return t('model_desc_'+k);}
 function nextLangCode(){if(LANG==='en')return'zh';return'en';}
 function applyI18n(){
   document.documentElement.setAttribute('lang',htmlLang());
@@ -1166,11 +1140,6 @@ function applyI18n(){
   var ps=document.getElementById('projectSelect');if(ps)ps.title=t('header_project');
   var np=document.querySelector('.h-proj-group .h-icon-btn[onclick^="openNewProjectModal"]');if(np){np.title=t('header_new_project');np.setAttribute('aria-label',t('header_new_project'));}
   var pd=document.getElementById('projDeleteBtn');if(pd){pd.title=t('header_delete_project');pd.setAttribute('aria-label',t('header_delete_project'));}
-  var ms=document.getElementById('modelSelect');if(ms){ms.title=t('header_claude_model');
-    var ds=window._dashSettings||{};
-    if(ds.ai_provider!=='openai_compatible'&&MODELS.length){
-      ms.innerHTML=MODELS.map(function(m){return '<option value="'+m.id+'"'+(m.id===CURRENT_MODEL?' selected':'')+'>'+m.label+' — '+getModelDesc(m.id)+'</option>';}).join('');
-    }}
   var cc=document.getElementById('claudeChar');if(cc){cc.title=t('char_title');cc.setAttribute('aria-label',t('char_title'));}
   if(typeof updateChatLabels==='function')updateChatLabels();
   if(typeof refreshLlmChip==='function')refreshLlmChip();
@@ -1257,8 +1226,8 @@ document.addEventListener('keydown',function(e){
   }
 });
 
-// ─── Project + Model Settings ───
-var PROJECTS=[], CURRENT_PROJECT=null, MODELS=[], CURRENT_MODEL='default';
+// ─── Project settings ───
+var PROJECTS=[], CURRENT_PROJECT=null;
 
 // Auto-inject current project into all /api/ calls (passes through without modifying existing fetch calls)
 // except /api/projects/* (project CRUD itself) bypasses.
@@ -1363,10 +1332,6 @@ function previewProjectFolders(){
 }
 
 async function openNewProjectModal(){
-  var ms = document.getElementById('newProjModel');
-  if (ms) ms.innerHTML = MODELS.map(function(m){
-    return '<option value="'+m.id+'">'+m.label+' — '+getModelDesc(m.id)+'</option>';
-  }).join('');
   document.getElementById('newProjTitle').value='';
   document.getElementById('newProjSlug').value='';
   document.getElementById('newProjDesc').value='';
@@ -1389,10 +1354,9 @@ async function doCreateProject(){
   var slug=(document.getElementById('newProjSlug').value||'').trim();
   var desc=(document.getElementById('newProjDesc').value||'').trim();
   var tmpl=document.getElementById('newProjTemplate').value;
-  var model=document.getElementById('newProjModel').value||'default';
   if (!title){ toast(t('proj_toast_title_req'),'err'); return; }
   try{
-    var r = await _origFetch('/api/projects/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:title,slug:slug,description:desc,template:tmpl,model:model})});
+    var r = await _origFetch('/api/projects/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:title,slug:slug,description:desc,template:tmpl})});
     var d = await r.json();
     if (!d.ok){ toast(t('proj_create_fail')+d.error,'err'); return; }
     closeModals();
@@ -1435,36 +1399,8 @@ async function confirmDeleteProject(){
 async function loadSettings(){
   try{
     var r=await fetch('/api/settings');var d=await r.json();
-    MODELS=d.models||[];
-    window._httpPresets=d.http_presets||[];
     window._cliTypes=d.cli_types||[];
     window._dashSettings=d.settings||{};
-    var ds=window._dashSettings||{};
-    var sel=document.getElementById('modelSelect');
-    if(sel){
-      if(ds.ai_provider==='openai_compatible'){
-        var presets=window._httpPresets||[];
-        var om=(ds.openai_model||'').trim();
-        var opts=[];
-        presets.forEach(function(p){
-          if(!p||p.id==='custom'||!p.model)return;
-          opts.push({id:p.model,label:p.name+' · '+p.model});
-        });
-        var ids=opts.map(function(o){return o.id;});
-        if(om&&ids.indexOf(om)<0){opts.push({id:om,label:'Custom · '+om});}
-        if(!opts.length){opts.push({id:om||'gpt-4o',label:(om||'HTTP model')});}
-        var cur=om||opts[0].id;
-        CURRENT_MODEL=cur;
-        sel.innerHTML=opts.map(function(o){
-          return '<option value="'+escAttr(o.id)+'"'+(o.id===cur?' selected':'')+'>'+esc(o.label)+'</option>';
-        }).join('');
-      }else{
-        CURRENT_MODEL=d.project_model||(d.settings||{}).model||'default';
-        sel.innerHTML=MODELS.map(function(m){
-          return '<option value="'+m.id+'"'+(m.id===CURRENT_MODEL?' selected':'')+'>'+m.label+' — '+getModelDesc(m.id)+'</option>';
-        }).join('');
-      }
-    }
     if(d.llm_ui)applyLlmUi(d.llm_ui);
   }catch(e){}
 }
@@ -1517,31 +1453,7 @@ function rerenderActiveViewForLlm(){
     else if(view==='page'&&cur)showPage(cur);
   }catch(e){console.warn('rerenderActiveViewForLlm',e);}
 }
-async function onModelChange(){
-  var sel=document.getElementById('modelSelect');if(!sel)return;
-  var model=sel.value;
-  var ds=window._dashSettings||{};
-  try{
-    var payload=ds.ai_provider==='openai_compatible'?{openai_model:model}:{model:model};
-    var r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    var d=await r.json();
-    if(d.ok){
-      CURRENT_MODEL=model;
-      if(d.settings)window._dashSettings=d.settings;
-      if(d.llm_ui)applyLlmUi(d.llm_ui);
-      rerenderActiveViewForLlm();
-      var label=model;
-      if(ds.ai_provider==='openai_compatible'){
-        toast('HTTP model: '+model,'ok');
-      }else{
-        label=(MODELS.find(function(m){return m.id===model;})||{}).label||model;
-        toast('Model: '+label,'ok');
-      }
-    }else{toast('Model change failed: '+d.error,'err');sel.value=CURRENT_MODEL;}
-  }catch(e){toast(t('err_network')+e.message,'err');}
-}
-
-// Cmd/Ctrl+P → focus project selector
+// Cmd/Ctrl+P -> focus project selector
 document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='p'){
     e.preventDefault();
@@ -2451,7 +2363,6 @@ async function runClaudeDiagnose(){
     var lines=[];
     lines.push('CLI installed: '+(d.cli_installed?'✓':'✗'));
     if(d.version)lines.push('Version: '+d.version);
-    lines.push('Model: '+d.model);
     if(d.quick_test_seconds!==null){
       lines.push('Quick test: '+(d.quick_test_ok?'✓':'✗')+' ('+d.quick_test_seconds+'s)');
       if(d.quick_test_output)lines.push('  → '+d.quick_test_output);
@@ -2907,6 +2818,7 @@ function renderSchedules(){
     h+='<td style="font-size:11px">'+(s.last_run?s.last_run.substring(0,16):'—')+'</td>';
     h+='<td>';
     h+='<button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="runSchedule(\''+s.id+'\')">'+t('schedules_run_now')+'</button> ';
+    h+='<button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="showScheduleForm(\''+s.id+'\')">'+t('schedules_edit')+'</button> ';
     h+='<button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="toggleSchedule(\''+s.id+'\')">'+(s.enabled?'Disable':'Enable')+'</button> ';
     h+='<button class="btn btn-outline" style="padding:2px 8px;font-size:11px;color:var(--red)" onclick="deleteSchedule(\''+s.id+'\')">'+t('schedules_delete')+'</button>';
     h+='</td></tr>';
@@ -2927,7 +2839,7 @@ function showScheduleForm(editId){
   h+='<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="schedReflect" '+(edit&&edit.steps&&edit.steps.indexOf('reflect')>=0?'checked':'')+'> Reflect</label>';
   h+='</div>';
   h+='<div class="field"><label><input type="checkbox" id="schedIngest" '+(edit&&edit.include_ingest?'checked':'')+'> '+t('loop_include_ingest')+'</label></div>';
-  h+='<div class="field"><label><input type="checkbox" id="schedEnabled" '+((edit?edit.enabled:'true')==='true'?'checked':'')+'> '+t('schedules_enabled')+'</label></div>';
+  h+='<div class="field"><label><input type="checkbox" id="schedEnabled" '+((edit ? !!edit.enabled : true)?'checked':'')+'> '+t('schedules_enabled')+'</label></div>';
   h+='<div style="display:flex;gap:8px;margin-top:16px">';
   h+='<button class="btn btn-accent" onclick="saveSchedule(\''+(edit?edit.id:'')+'\')">Save</button>';
   h+='<button class="btn btn-outline" onclick="closeScheduleForm()">Cancel</button>';
@@ -2981,7 +2893,9 @@ async function deleteSchedule(id){
   if(!confirm('Delete this schedule?'))return;
   try{
     var r=await fetch('/api/schedules/'+id,{method:'DELETE'});
-    await loadSchedules();
+    var d=await r.json();
+    if(d.ok){await loadSchedules();}
+    else toast('Error: '+(d.error||'delete failed'));
   }catch(e){toast('Error deleting schedule');}
 }
 
@@ -4837,20 +4751,8 @@ async function showSettings(){
   document.getElementById('bc').innerHTML='<b>'+t('settings_ai_title')+'</b>';
   await loadSettings();
   var s=window._dashSettings||{};
-  var presets=window._httpPresets||[];
-  var profActive=(s.active_ai_profile||'');var profiles=s.ai_profiles&&typeof s.ai_profiles==='object'?s.ai_profiles:{};
-  var profOpts='<option value="">'+esc(t('settings_profile_none'))+'</option>';
-  Object.keys(profiles).sort().forEach(function(nm){profOpts+='<option value="'+esc(nm)+'"'+(nm===profActive?' selected':'')+'>'+esc(nm)+'</option>';});
-  var ap=s.ai_provider||'cli';
-  var keyPh=t('settings_key_placeholder');
-  var presetOpts='<option value="">'+esc(t('settings_preset_custom'))+'</option>';
-  presets.forEach(function(pr){if(pr.id!=='custom')presetOpts+='<option value="'+esc(pr.id)+'">'+esc(pr.name)+'</option>';});
-  var ht=(s.http_temperature!==undefined&&s.http_temperature!==null)?String(s.http_temperature):'0.2';
-  var hm=(s.http_max_tokens!==undefined&&s.http_max_tokens!==null)?String(s.http_max_tokens):'0';
   var h='<div class="panel"><h2>'+t('settings_ai_title')+'</h2><p class="desc">'+esc(t('settings_intro'))+'</p>';
-  h+='<div class="field"><label>'+t('settings_profile_active')+'</label><select id="setAiProfile">'+profOpts+'</select></div>';
   h+='<h3 style="font-size:14px;margin:20px 0 8px">CLI</h3>';
-  // CLI Type selector
   var cliType=s.cli_type||'claude';
   h+='<div class="field"><label>'+t('settings_cli_type')+'</label><select id="setCliType">';
   (window._cliTypes||[]).forEach(function(ct){h+='<option value="'+esc(ct.id)+'"'+(ct.id===cliType?' selected':'')+'>'+esc(ct.label)+'</option>';});
@@ -4865,29 +4767,9 @@ async function showSettings(){
   h+='<div class="field"><label>'+t('settings_cli_path_extra')+'</label><textarea class="edit-area" id="setCliPathExtra" style="min-height:64px" placeholder="/opt/homebrew/bin">'+esc(s.cli_path_extra||'')+'</textarea>';
   h+='<span style="font-size:11px;color:var(--muted2)">'+esc(t('settings_cli_path_extra_hint'))+'</span></div>';
   h+='<div class="field"><label>'+t('settings_extra_args')+'</label><textarea class="edit-area" id="setExtraArgs" style="min-height:72px">'+esc(JSON.stringify(s.claude_cli_extra_args||[]))+'</textarea></div>';
-  h+='<div class="edit-actions" style="margin-bottom:16px"><button type="button" class="btn btn-outline" onclick="testCliProbe()">'+t('settings_test_cli')+'</button><button type="button" class="btn btn-green" onclick="testAiE2E()">⚡ '+t('settings_test_e2e')+'</button></div>';
-  h+='<h3 style="font-size:14px;margin:20px 0 8px">HTTP (OpenAI-compatible)</h3>';
-  h+='<div class="field"><label>'+t('settings_ai_provider')+'</label><select id="setAiProv"><option value="cli"'+(ap==='cli'?' selected':'')+'>'+esc(t('settings_provider_cli'))+'</option><option value="openai_compatible"'+(ap==='openai_compatible'?' selected':'')+'>'+esc(t('settings_provider_openai'))+'</option></select></div>';
-  h+='<div class="field"><label>'+t('settings_preset_label')+'</label><select id="setHttpPreset">'+presetOpts+'</select> ';
-  h+='<button type="button" class="btn btn-outline" onclick="applyHttpPreset()">'+t('settings_preset_apply')+'</button></div>';
-  h+='<div class="field"><label>'+t('settings_openai_url')+'</label><input type="text" id="setOpenaiUrl" placeholder="https://api.openai.com/v1" value="'+esc(s.openai_base_url||'')+'"></div>';
-  h+='<div class="field"><label>'+t('settings_openai_model')+'</label><input type="text" id="setOpenaiModel" value="'+esc(s.openai_model||'')+'"></div>';
-  h+='<div class="field"><label>'+t('settings_http_temp')+'</label><input type="number" id="setHttpTemp" min="0" max="2" step="0.1" value="'+esc(ht)+'"></div>';
-  h+='<div class="field"><label>'+t('settings_http_maxtok')+'</label><input type="number" id="setHttpMaxTok" min="0" step="1" value="'+esc(hm)+'"><span style="font-size:11px;color:var(--muted2);margin-left:8px">'+esc(t('settings_http_maxtok_hint'))+'</span></div>';
-  h+='<div class="field"><label>'+t('settings_openai_key')+'</label><input type="password" id="setOpenaiKey" autocomplete="off" placeholder="'+esc(keyPh)+'"></div>';
-  h+='<div class="edit-actions"><button type="button" class="btn btn-green" onclick="saveAiSettings()">'+t('settings_save_ai')+'</button>';
-  h+='<button type="button" class="btn btn-outline" onclick="testAiHttp()">'+t('settings_test_ai')+'</button></div>';
+  h+='<div class="edit-actions"><button type="button" class="btn btn-green" onclick="saveAiSettings()">'+t('settings_save_ai')+'</button><button type="button" class="btn btn-outline" onclick="testCliProbe()">'+t('settings_test_cli')+'</button><button type="button" class="btn btn-outline" onclick="testAiE2E()">⚡ '+t('settings_test_e2e')+'</button></div>';
   h+='<p id="settingsAiMsg" style="font-size:12px;color:var(--muted);margin-top:12px;white-space:pre-wrap"></p></div>';
   document.getElementById('content').innerHTML=h;
-}
-function applyHttpPreset(){
-  var sel=document.getElementById('setHttpPreset');
-  var id=sel&&sel.value;if(!id)return;
-  var presets=window._httpPresets||[];
-  var pr=presets.find(function(p){return p.id===id;});
-  if(!pr||!pr.endpoint)return;
-  document.getElementById('setOpenaiUrl').value=pr.endpoint;
-  document.getElementById('setOpenaiModel').value=pr.model||'';
 }
 function testCliProbe(){
   var msg=document.getElementById('settingsAiMsg');
@@ -4902,9 +4784,9 @@ function testCliProbe(){
 }
 function testAiE2E(){
   var msg=document.getElementById('settingsAiMsg');
-  if(msg)msg.textContent='Testing AI end-to-end...';
+  if(msg)msg.textContent='Testing CLI end-to-end...';
   fetch('/api/ai/test',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){return r.json();}).then(function(d){
-    var lines=['Provider: '+(d.provider||'?')];
+    var lines=['Backend: '+(d.provider||'cli')];
     if(d.ok&&d.valid){
       lines.push('✅ End-to-End OK');
       lines.push('Response: '+d.response);
@@ -4925,34 +4807,16 @@ async function saveAiSettings(){
     var extras=document.getElementById('setExtraArgs').value.trim();
     var parsed;
     try{parsed=extras?JSON.parse(extras):[];}catch(e){toast('JSON: '+e.message,'err');return;}
-    var tEl=document.getElementById('setHttpTemp'),mEl=document.getElementById('setHttpMaxTok'),cEl=document.getElementById('setCliPathExtra');
+    var cEl=document.getElementById('setCliPathExtra');
     var body={
       cli_type:document.getElementById('setCliType').value,
       claude_cli_binary:document.getElementById('setCliBin').value,
       claude_cli_extra_args:parsed,
-      ai_provider:document.getElementById('setAiProv').value,
-      openai_base_url:document.getElementById('setOpenaiUrl').value.trim(),
-      openai_model:document.getElementById('setOpenaiModel').value.trim(),
-      http_temperature:tEl?parseFloat(tEl.value):0.2,
-      http_max_tokens:mEl?parseInt(mEl.value,10):0,
-      active_ai_profile:document.getElementById('setAiProfile').value.trim(),
     };
-    if(isNaN(body.http_temperature))body.http_temperature=0.2;
-    if(isNaN(body.http_max_tokens))body.http_max_tokens=0;
     body.cli_path_extra=cEl?cEl.value:'';
-    var nk=document.getElementById('setOpenaiKey').value.trim();if(nk)body.openai_api_key=nk;
     var r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
     if(d.ok){toast(t('save_success'),'ok');await loadSettings();if(msg)msg.textContent='';rerenderActiveViewForLlm();}
-    else{if(msg)msg.textContent=d.error||'';toast(d.error||'fail','err');}
-  }catch(e){if(msg)msg.textContent=e.message;toast(t('err_network')+e.message,'err');}
-}
-async function testAiHttp(){
-  var msg=document.getElementById('settingsAiMsg');
-  try{
-    var r=await fetch('/api/ai/test',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    var d=await r.json();
-    if(d.ok){if(msg)msg.textContent=(d.preview||'');toast('OK','ok');}
     else{if(msg)msg.textContent=d.error||'';toast(d.error||'fail','err');}
   }catch(e){if(msg)msg.textContent=e.message;toast(t('err_network')+e.message,'err');}
 }
@@ -5071,7 +4935,7 @@ function buildGuide(lang){
       '- **+ 页面** — 带 frontmatter 的空页。','',
       '### ⋯ 更多 (More)',
       '- **定时任务** — cron 表达式定期维护（lint/reflect），支持立即运行、启用/禁用、编辑、删除。',
-      '- **设置** — 模型选择、CLI 类型、HTTP 预设等。',
+      '- **设置** — CLI 类型、命令路径、额外参数等。',
       '- **CLAUDE.md** — 查看/编辑模式。',
       '- **指南** — 就是本文。','',
       '---','',
@@ -5086,7 +4950,6 @@ function buildGuide(lang){
       '- **页 / 来源 / 链接** — wiki 规模统计。',
       '- **Wiki Ratio** — 最近问答里 Claude 用 wiki 取代 raw 的比例；低于 0.4 说明 wiki 还撑不起来。',
       '- **索引导航** — `flat` / `hierarchical` / `indexed`（随规模自动切）。',
-      '- **模型下拉** — 选用 Claude 模型（Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / 默认）。',
       '- **语言按钮** — 在 English / 中文 之间切换界面。','',
       '---','',
       '## 单页操作','',
@@ -5128,9 +4991,9 @@ function buildGuide(lang){
       '- **管理** — 立即运行、启用/禁用、编辑、删除均可在表格中操作。','',
       '---','',
       '## 设置 (Settings)','',
-      '- **模型选择** — Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / 默认。',
       '- **CLI 类型** — Claude Code、Claw 等，支持自定义二进制路径。',
-      '- **HTTP 预设** — 配置兼容 OpenAI 协议的 API 端点。','',
+      '- **CLI 命令** — 可直接指定绝对路径或包装脚本。',
+      '- **Extra PATH / 额外参数** — 仅作用于仪表盘子进程。','',
       '---','',
       '## 聊天助手','',
       '页面底部聊天框可用自然语言执行操作：',
@@ -5208,7 +5071,7 @@ function buildGuide(lang){
     '- **+ Page** — empty page with frontmatter.','',
     '### ⋯ More',
     '- **Schedules** — recurring wiki maintenance via cron (lint/reflect). Run now, enable/disable, edit, delete.',
-    '- **Settings** — model selection, CLI types, HTTP presets.',
+    '- **Settings** — CLI types, command paths, and extra arguments.',
     '- **CLAUDE.md** — view and edit the schema.',
     '- **Guide** — this document.','',
     '---','',
@@ -5223,7 +5086,6 @@ function buildGuide(lang){
     '- **pages / sources / links** — wiki totals.',
     '- **Wiki Ratio** — how often Claude reached into the wiki vs raw on recent queries. Below 0.4 means the wiki isn\'t replacing raw.',
     '- **Index badge** — `flat` / `hierarchical` / `indexed` (auto-switches with size).',
-    '- **Model dropdown** — Claude model (Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / Default).',
     '- **Language (EN / 中文)** — UI language.','',
     '---','',
     '## Per-page actions','',
@@ -5265,9 +5127,9 @@ function buildGuide(lang){
     '- **Management** — run now, enable/disable, edit, delete — all from the schedules table.','',
     '---','',
     '## Settings','',
-    '- **Model selection** — Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / Default.',
     '- **CLI types** — Claude Code, Claw, etc. Custom binary paths supported.',
-    '- **HTTP presets** — configure OpenAI-compatible API endpoints.','',
+    '- **CLI command** — point directly to an absolute path or wrapper script.',
+    '- **Extra PATH / extra args** — only applied to the dashboard subprocess.','',
     '---','',
     '## Chat Assistant','',
     'Execute wiki operations from the chat bar at the bottom of the page:',

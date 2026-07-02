@@ -33,3 +33,8 @@ docs/.venv/
 
 # projects — content managed externally, only registry tracked
 projects/
+
+# Playwright e2e
+tests/playwright/node_modules/
+tests/playwright/playwright-report/
+tests/playwright/test-results/

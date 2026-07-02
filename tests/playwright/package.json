@@ -1,0 +1,15 @@
+{
+  "name": "memex-playwright-tests",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright end-to-end tests for the Memex dashboard",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}

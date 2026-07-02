@@ -42,19 +42,9 @@ CLAUDE_QUICK_TIMEOUT = int(os.environ.get("CLAUDE_QUICK_TIMEOUT", "30"))
 # Stream heartbeat interval (seconds)
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))
 
-# --- Runtime settings (model etc.) ---
+# ─── 런타임 설정 ───
 
 SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
-
-# OpenAI-compatible vendor presets (align with KnowledgeBuildAnalysis SetupPage AI_PRESETS)
-HTTP_PRESETS = [
-    {"id": "openai", "name": "OpenAI", "endpoint": "https://api.openai.com/v1", "model": "gpt-4o"},
-    {"id": "gemini", "name": "Gemini (OpenAI compat)", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-1.5-pro"},
-    {"id": "qwen", "name": "Qwen (DashScope)", "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-max"},
-    {"id": "deepseek", "name": "DeepSeek", "endpoint": "https://api.deepseek.com/v1", "model": "deepseek-chat"},
-    {"id": "custom", "name": "Custom", "endpoint": "", "model": ""},
-]
-
 
 def _save_settings(s):
     """Atomically write settings to avoid corruption from concurrent writers."""
@@ -80,23 +70,11 @@ def _save_settings(s):
 
 SETTINGS = llm_provider.load_settings()
 
-# Register model validator
-project_registry.set_model_validator(llm_provider.get_model_validator())
-
-# Backward-compat aliases for dashboard UI code
 CLI_TYPES = llm_provider.CLI_TYPES
-AVAILABLE_MODELS = llm_provider.AVAILABLE_MODELS
 
 
 def _settings_for_response():
-    """Strip secrets for JSON responses."""
-    s = dict(SETTINGS)
-    if s.get("openai_api_key"):
-        s["openai_api_key_set"] = True
-        s["openai_api_key"] = ""
-    else:
-        s["openai_api_key_set"] = False
-    return s
+    return dict(SETTINGS)
 
 
 def _cli_display_short() -> str:
@@ -108,52 +86,9 @@ def _cli_display_short() -> str:
         return raw[:48]
 
 
-def _http_vendor_label() -> str:
-    """Preset vendor name or truncated model id — no secrets."""
-    if SETTINGS.get("ai_provider") != "openai_compatible":
-        return ""
-    model = (SETTINGS.get("openai_model") or "").strip()
-    base = (SETTINGS.get("openai_base_url") or "").strip().rstrip("/")
-    if not model:
-        return ""
-    matches = []
-    for p in HTTP_PRESETS:
-        if (p.get("id") or "") == "custom":
-            continue
-        pm = (p.get("model") or "").strip()
-        if pm != model:
-            continue
-        ep = (p.get("endpoint") or "").strip().rstrip("/")
-        matches.append((str(p.get("name") or pm), ep))
-    if not matches:
-        return model[:48]
-    if len(matches) == 1:
-        return matches[0][0]
-    if base:
-        for name, ep in matches:
-            if ep and (base == ep or base.startswith(ep) or ep in base):
-                return name
-    return matches[0][0]
-
-
 def _build_llm_ui() -> dict:
-    """Provider identity for dashboard buttons and toolbar chip (no secrets)."""
-    http_ready = llm_provider.http_ready(SETTINGS)
-    ap = SETTINGS.get("ai_provider") or "cli"
+    """CLI identity for dashboard buttons and toolbar chip."""
     cli_short = _cli_display_short()
-    http_short = ""
-    if ap == "openai_compatible":
-        http_short = _http_vendor_label()
-        if not http_short:
-            om = (SETTINGS.get("openai_model") or "").strip()
-            http_short = om[:48] if om else ""
-
-    if ap == "openai_compatible" and http_ready:
-        mode = "mixed"
-    else:
-        mode = "cli_only"
-
-    qb = "http" if http_ready else "cli"
     action_backend = {
         "ingest": "cli",
         "lint": "cli",
@@ -166,24 +101,18 @@ def _build_llm_ui() -> dict:
         "fix_citations": "cli",
         "suggest_sources": "cli",
         "query_save": "cli",
-        "query": qb,
-        "assistant": qb,
+        "query": "cli",
+        "assistant": "cli",
     }
     cli_type = SETTINGS.get("cli_type") or "claude"
     cli_type_info = CLI_TYPES.get(cli_type, CLI_TYPES["claude"])
     return {
         "cli_short": cli_short,
-        "http_short": http_short,
-        "mode": mode,
-        "http_ready": http_ready,
+        "mode": "cli_only",
         "action_backend": action_backend,
         "cli_type": cli_type,
         "cli_type_label": cli_type_info.get("label", cli_type),
     }
-
-
-# Backward-compat: lambda wrapping http_ready with SETTINGS
-_openai_http_ready = lambda: llm_provider.http_ready(SETTINGS)
 
 
 # Backward-compat aliases for CLI helpers used by run_claude_tracked / run_claude_streaming
@@ -223,16 +152,11 @@ def _wiki_rel_for_project(proj, wiki_file_rel: str) -> str:
         return f"wiki/{wf}"
 
 
-# ─── Backward-compat: llm_provider-based replacements for old run_claude/openai_chat_completion ───
+# ─── CLI runner helpers ───
 
-def run_claude(prompt, timeout=None, cwd=None, project=None, force_cli=True):
-    """Run AI prompt via unified llm_provider."""
-    return llm_provider.run(prompt, settings=SETTINGS, project=project, timeout=timeout, cwd=cwd, force_cli=force_cli)
-
-
-def openai_chat_completion(messages, system=None, timeout=120):
-    """OpenAI-compatible chat via llm_provider."""
-    return llm_provider.run_http(messages, settings=SETTINGS, system=system, timeout=timeout)
+def run_claude(prompt, timeout=None, cwd=None, project=None):
+    """Run agent prompt via unified llm_provider."""
+    return llm_provider.run(prompt, settings=SETTINGS, project=project, timeout=timeout, cwd=cwd)
 
 
 # Helpers for run_claude_tracked / run_claude_streaming (still CLI-only, stream-json)
@@ -242,11 +166,6 @@ def _cli_subprocess_env():
 
 def _parse_claude_extra_args():
     return llm_provider._parse_claude_extra_args(SETTINGS)
-
-
-def _model_args_for(project=None):
-    return llm_provider._model_args_for(project, SETTINGS)
-
 
 RAW_ABS = os.path.abspath(str(RAW_DIR))
 
@@ -443,21 +362,19 @@ def _timeout_hint():
     return (
         f"Claude CLI timeout ({CLAUDE_TIMEOUT}s). Possible causes + solutions:\n"
         f"  1. Claude CLI not authenticated -> run 'claude' in terminal to verify login\n"
-        f"  2. Model too heavy -> switch to Sonnet/Haiku in header model dropdown\n"
-        f"  3. Task itself is large -> restart server with env CLAUDE_TIMEOUT=1200\n"
-        f"  4. Quick check via /api/claude/diagnose"
+        f"  2. Task itself is large -> restart server with env CLAUDE_TIMEOUT=1200\n"
+        f"  3. Quick check via /api/claude/diagnose"
     )
 
 
 def run_claude_tracked(prompt, cwd=None, project=None):
-    """Trace Claude CLI stream-json events (Query only — HTTP queries use _do_query_openai_rag).
+    """Trace Claude CLI stream-json events for query workflows.
 
     → (ok, answer, error, files_read, token_usage)"""
     target_cwd = str(cwd or (project.root if project else PROJECT_ROOT))
     exe = llm_provider.get_cli_executable(SETTINGS)
     cmd = (
         [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
-        + _model_args_for(project)
         + _parse_claude_extra_args()
         + ["--output-format", "stream-json", "--verbose", prompt]
     )
@@ -687,7 +604,6 @@ def run_claude_streaming(prompt, timeout=None, cwd=None, project=None):
     exe = llm_provider.get_cli_executable(SETTINGS)
     cmd = (
         [exe, "-p", "--allowedTools", CLAUDE_TOOLS]
-        + _model_args_for(project)
         + _parse_claude_extra_args()
         + ["--output-format", "stream-json", "--verbose", prompt]
     )
@@ -2727,16 +2643,14 @@ def check_status():
         pass
     return {
         "claude": {"connected": claude_ok, "version": claude_ver, "binary": SETTINGS.get("claude_cli_binary", "claude")},
-        "ai_provider": SETTINGS.get("ai_provider", "cli"),
         "cli_type": SETTINGS.get("cli_type", "claude"),
-        "openai_configured": _openai_http_ready(),
         "obsidian": _read_obsidian_facts(),
         "llm_ui": _build_llm_ui(),
     }
 
 
 def diagnose_claude():
-    """Quick Claude CLI check — installation, auth, model response time"""
+    """Quick Claude CLI check — installation, auth, response time"""
     env_cli = _cli_subprocess_env()
     path_preview = env_cli.get("PATH", "")[:280]
     extra_dirs = llm_provider._parse_cli_path_extra_dirs(SETTINGS)
@@ -2745,8 +2659,6 @@ def diagnose_claude():
         "cli_installed": False,
         "version": "",
         "auth_ok": None,
-        "model": SETTINGS.get("model", "default"),
-        "model_args": llm_provider._model_args_for(None, SETTINGS),
         "quick_test_seconds": None,
         "quick_test_ok": False,
         "quick_test_output": "",
@@ -2801,7 +2713,7 @@ def diagnose_claude():
         t0 = time.time()
         exe = llm_provider.get_cli_executable(SETTINGS)
         r = subprocess.run(
-            [exe, "-p"] + llm_provider._model_args_for(None, SETTINGS) + _parse_claude_extra_args() + ["--output-format", "text", "Reply with the single word OK."],
+            [exe, "-p"] + _parse_claude_extra_args() + ["--output-format", "text", "Reply with the single word OK."],
             capture_output=True, text=True, timeout=CLAUDE_QUICK_TIMEOUT,
             cwd=str(PROJECT_ROOT),
             env=_cli_subprocess_env(),
@@ -2818,15 +2730,11 @@ def diagnose_claude():
             else:
                 result["advice"].append(f"Claude response failed: {(r.stderr or '')[:200]}")
         if elapsed > 15:
-            result["advice"].append(f"Response is slow ({elapsed:.1f}s). Consider switching to Sonnet/Haiku.")
+            result["advice"].append(f"Response is slow ({elapsed:.1f}s). Check CLI network/auth health.")
     except subprocess.TimeoutExpired:
         result["auth_ok"] = False
         result["error"] = f"Quick diagnostic also timed out ({CLAUDE_QUICK_TIMEOUT}s)"
         result["advice"].append("Claude CLI not responding. Run 'claude' in terminal to check auth/network.")
-
-    # 3. recommendation for heavy models
-    if SETTINGS.get("model") == "claude-opus-4-7":
-        result["advice"].append("Opus 4.7 is the slowest. For large tasks like Ingest, Sonnet 4.6 recommended.")
 
     return result
 
@@ -3190,56 +3098,6 @@ When finished:
     }
 
 
-def _do_query_openai_rag(proj, question: str, lang_line: str):
-    """OpenAI-compatible query: inject TF-IDF wiki snippets + index excerpt; English system prompt."""
-    scored = _tfidf_wiki_search(proj, question, top_k=_QUERY_RAG_TOP_K)
-    files_order: list[str] = []
-    seen: set[str] = set()
-
-    def _add(p: str) -> None:
-        if p not in seen:
-            seen.add(p)
-            files_order.append(p)
-
-    index_ex = ""
-    index_p = proj.wiki_dir / "index.md"
-    if index_p.is_file():
-        raw = index_p.read_text("utf-8")
-        _, body = parse_fm(raw)
-        index_ex = (body or "")[:_QUERY_INDEX_EXCERPT_MAX]
-        _add(_wiki_rel_for_project(proj, "index.md"))
-
-    excerpt_parts = []
-    for row in scored:
-        rel = row["filename"]
-        _add(_wiki_rel_for_project(proj, rel))
-        excerpt_parts.append(f"### {rel} (score={row['score']})\n{row.get('snippet', '')}")
-
-    excerpts_block = "\n\n".join(excerpt_parts) if excerpt_parts else "(No TF-IDF matches — rely on index excerpt only if present.)"
-
-    system = (
-        "You answer using ONLY the wiki index excerpt and retrieved wiki excerpts below. "
-        "Do not invent facts beyond them. "
-        "Cite relevant wiki pages using [[wikilink]] syntax.\n"
-        + lang_line
-    )
-    user_content = (
-        "## Wiki index excerpt (truncated)\n"
-        + (index_ex if index_ex else "(wiki/index.md missing or empty)") + "\n\n"
-        "## Retrieved wiki excerpts\n"
-        + excerpts_block
-        + "\n\n## Question\n"
-        + question
-    )
-
-    ok, ans, err = openai_chat_completion(
-        [{"role": "user", "content": user_content}],
-        system=system,
-        timeout=CLAUDE_TIMEOUT,
-    )
-    return ok, ans[:4000], err, files_order, {}
-
-
 def do_query(question, project_slug=None, lang=None):
     proj = project_registry.get_project(project_slug)
     q = (question or "").strip()
@@ -3267,10 +3125,7 @@ Language: {lang_line}
 Question:
 {q}"""
 
-    if _openai_http_ready():
-        ok, answer, err, files_read, token_usage = _do_query_openai_rag(proj, q, lang_line)
-    else:
-        ok, answer, err, files_read, token_usage = run_claude_tracked(prompt, project=proj)
+    ok, answer, err, files_read, token_usage = run_claude_tracked(prompt, project=proj)
 
     # paths may be project-relative or root-relative, cover both
     def _is_wiki(f):
@@ -4013,7 +3868,9 @@ ABOUT MEMEX (this IS a special wiki platform you help manage):
 - MCP server exposes wiki operations programmatically (list pages, search, create/update pages, validate/fix links).
 - Optional Graphify integration: Leiden/Louvain clustering, god-nodes filtering, surprising connections, community naming, interactive HTML export.
 - Dashboard languages: English, 中文.
-- Claude CLI must be installed and configured. Model selector: Opus/Sonnet/Haiku/Default.
+- Claude CLI must be installed and configured.
+ - Dashboard languages: English, 中文.
+ - Claude CLI must be installed and configured.
 
 DASHBOARD FEATURES:
 - Toolbar has 5 categories:
@@ -4023,7 +3880,7 @@ DASHBOARD FEATURES:
   * Create: + Folder, + Page
   * More: CLAUDE.md, Guide
 - Sidebar: drag right edge to resize (220-500px). Cmd/Ctrl+B to toggle. Click folder NAME (not arrow) for continuous folder view.
-- Header: language toggle (English / 中文), model selector (Opus/Sonnet/Haiku/Default), Wiki Ratio gauge, index strategy badge.
+ - Header: language toggle (English / 中文), Wiki Ratio gauge, index strategy badge.
 - Status bar (bottom-left): raw facts only. Claude CLI (on/off) + Obsidian (process + vault_open).
 - Per-page: Edit, Slides (Marp export), Delete.
 - Every ingest = git commit. Revertable via History.
@@ -4047,12 +3904,14 @@ ASSISTANT_CONTEXT_ZH = """你是 "Claude"，**Memex**（LLM 驱动的个人知�
 - MCP Server 程序化暴露 wiki 操作（列出页面、搜索、创建/更新、链接验证/修复）。
 - 可选 Graphify 集成：Leiden/Louvain 聚类、god-nodes 过滤、意外连接发现、社区命名、交互式 HTML 导出。
 - 控制台语言：English, 中文。
-- 需安装配置 Claude CLI。模型选择：Opus/Sonnet/Haiku/Default。
+- 需安装配置 Claude CLI。
+ - 控制台语言：English, 中文。
+ - 需安装配置 Claude CLI。
 
 控制台要点：
 - 工具栏 5 类：工作（收录、问答、写作、比较）；分析（检查、反思、复习、引证）；浏览（搜索、图谱、历史）；创建（+文件夹、+页面）；更多（CLAUDE.md、指南）。
 - 侧栏：拖右缘 220–500px。Cmd/Ctrl+B 收起。在树中点击文件夹**名称**（非小箭头）进入连续阅读。
-- 标题栏：语言切换（English / 中文）、模型、Wiki Ratio、索引导航。
+ - 标题栏：语言切换（English / 中文）、Wiki Ratio、索引导航。
 - 左下状态栏：只显示事实。Claude CLI 与 Obsidian（进程 + vault 是否打开）。
 - 单页：编辑、Slides（Marp 导出）、删除。
 - 每次收录 = git 提交，可在历史中恢复。
@@ -4145,7 +4004,7 @@ For "reflect": params may include {{"window": "last-N-ingests"}}
 User message: "{question}"
 JSON:"""
 
-    ok, text, err = run_claude(prompt, timeout=timeout, cwd=str(PROJECT_ROOT), project=None, force_cli=False)
+    ok, text, err = run_claude(prompt, timeout=timeout, cwd=str(PROJECT_ROOT), project=None)
     if ok and text:
         try:
             ts = text.strip()
@@ -4432,8 +4291,6 @@ def do_assistant_chat(question, lang="en", history=None, project=None):
             project_name=project,
             WIKI_CONTEXT=wiki_context[:5000]
         )
-    elif lang == "ko":
-        ctx = ASSISTANT_CONTEXT_KO
     elif lang == "zh":
         ctx = ASSISTANT_CONTEXT_ZH
     else:
@@ -4448,8 +4305,8 @@ def do_assistant_chat(question, lang="en", history=None, project=None):
     else:
         tail = "Assistant (short, 2-4 sentences):"
     prompt = f"{ctx}\n\nConversation so far:{hist_text}\n\nUser: {question}\n\n{tail}"
-    # assistant does not read wiki/raw files, only generates answers — HTTP or CLI
-    ok, ans, err = run_claude(prompt, timeout=60, cwd=str(PROJECT_ROOT), project=None, force_cli=False)
+    # Assistant does not read wiki/raw files; it only generates answers.
+    ok, ans, err = run_claude(prompt, timeout=60, cwd=str(PROJECT_ROOT), project=None)
     return {"ok": ok, "answer": (ans or "").strip()[:2000], "error": err[:300] if not ok else ""}
 
 
@@ -4486,13 +4343,12 @@ def get_active_project_api():
         return {"ok": False, "error": str(e)}
 
 
-def create_project_api(slug_hint, title, description, model, template):
+def create_project_api(slug_hint, title, description, template):
     try:
         p = project_registry.create_project(
             slug_hint=slug_hint or title,
             title=title,
             description=description,
-            model=model,
             template=template,
         )
         return {"ok": True, "project": p.to_dict()}
@@ -4524,6 +4380,64 @@ def update_project_api(slug, **fields):
 
 def delete_project_api(slug, confirm):
     return project_registry.delete_project(slug, confirm=confirm)
+
+
+def list_schedules_api():
+    return {"ok": True, "schedules": _sched_load()[0]}
+
+
+def upsert_schedule_api(sched: dict):
+    sched = dict(sched or {})
+    if not (sched.get("name") or "").strip():
+        return {"ok": False, "error": "schedule name required"}
+    if not (sched.get("cron") or "").strip():
+        return {"ok": False, "error": "schedule cron required"}
+    if not sched.get("steps"):
+        return {"ok": False, "error": "schedule steps required"}
+
+    if not sched.get("id"):
+        import hashlib
+        sched["id"] = hashlib.md5(sched.get("name", "").encode()).hexdigest()[:8]
+
+    sched["name"] = str(sched.get("name", "")).strip()
+    sched["cron"] = str(sched.get("cron", "")).strip()
+    sched["steps"] = list(sched.get("steps", []))
+    sched["enabled"] = bool(sched.get("enabled", False))
+    sched["project"] = str(sched.get("project", "") or "")
+    sched["include_ingest"] = bool(sched.get("include_ingest", False))
+    sched["reflect_window"] = str(
+        sched.get("reflect_window", "last-10-ingests") or "last-10-ingests"
+    )
+
+    schedules = _sched_load()[0]
+    for i, existing in enumerate(schedules):
+        if existing.get("id") == sched["id"]:
+            schedules[i] = {**existing, **sched}
+            _save_sched_files(schedules)
+            return {"ok": True, "schedule": schedules[i]}
+
+    schedules.append(sched)
+    _save_sched_files(schedules)
+    return {"ok": True, "schedule": sched}
+
+
+def delete_schedule_api(schedule_id: str):
+    schedules = _sched_load()[0]
+    new_schedules = [s for s in schedules if s.get("id") != schedule_id]
+    if len(new_schedules) == len(schedules):
+        return {"ok": False, "error": "schedule not found"}
+    _save_sched_files(new_schedules)
+    return {"ok": True, "deleted": schedule_id}
+
+
+def toggle_schedule_api(schedule_id: str):
+    schedules = _sched_load()[0]
+    for s in schedules:
+        if s.get("id") == schedule_id:
+            s["enabled"] = not bool(s.get("enabled", False))
+            _save_sched_files(schedules)
+            return {"ok": True, "schedule": s}
+    return {"ok": False, "error": "schedule not found"}
 
 
 # ─── CRUD ───
@@ -4593,7 +4507,7 @@ def delete_page(filename, project_slug=None):
 
 
 def merge_dashboard_settings(body):
-    """Apply optional dashboard keys from POST body; persist SETTINGS."""
+    """Apply optional dashboard CLI keys from POST body; persist SETTINGS."""
     if not isinstance(body, dict):
         return {"ok": False, "error": "expected JSON object"}
     if "cli_type" in body:
@@ -4605,49 +4519,10 @@ def merge_dashboard_settings(body):
         SETTINGS["claude_cli_binary"] = (body.get("claude_cli_binary") or "claude").strip() or "claude"
     if "claude_cli_extra_args" in body:
         SETTINGS["claude_cli_extra_args"] = body.get("claude_cli_extra_args")
-    if "ai_provider" in body:
-        ap = (body.get("ai_provider") or "cli").strip().lower()
-        if ap not in ("cli", "openai_compatible"):
-            return {"ok": False, "error": "ai_provider must be cli or openai_compatible"}
-        SETTINGS["ai_provider"] = ap
-    if "openai_base_url" in body:
-        SETTINGS["openai_base_url"] = (body.get("openai_base_url") or "").strip()
-    if "openai_model" in body:
-        SETTINGS["openai_model"] = (body.get("openai_model") or "").strip()
-    if "openai_api_key" in body:
-        key = body.get("openai_api_key")
-        if isinstance(key, str) and key.strip():
-            SETTINGS["openai_api_key"] = key.strip()
     if "cli_path_extra" in body:
         SETTINGS["cli_path_extra"] = body.get("cli_path_extra") if isinstance(body.get("cli_path_extra"), str) else ""
-    if "http_temperature" in body:
-        try:
-            ht = float(body.get("http_temperature"))
-            SETTINGS["http_temperature"] = max(0.0, min(2.0, ht))
-        except (TypeError, ValueError):
-            SETTINGS["http_temperature"] = 0.2
-    if "http_max_tokens" in body:
-        try:
-            SETTINGS["http_max_tokens"] = max(0, int(body.get("http_max_tokens")))
-        except (TypeError, ValueError):
-            SETTINGS["http_max_tokens"] = 0
-    if "active_ai_profile" in body:
-        SETTINGS["active_ai_profile"] = (body.get("active_ai_profile") or "").strip()
-    if "ai_profiles" in body and isinstance(body.get("ai_profiles"), dict):
-        SETTINGS["ai_profiles"] = body["ai_profiles"]
     _save_settings(SETTINGS)
-    # Active profile application handled by llm_provider via SETTINGS
     return {"ok": True}
-
-
-def api_ai_test_connection():
-    if not _openai_http_ready():
-        return {"ok": False, "error": "OpenAI-compatible provider not fully configured."}
-    ok, text, err = openai_chat_completion(
-        [{"role": "user", "content": 'Reply with exactly "OK".'}],
-        timeout=45,
-    )
-    return {"ok": ok, "preview": (text or "").strip()[:120], "error": err}
 
 
 def api_cli_test():
@@ -4700,32 +4575,24 @@ def api_cli_test():
 
 
 def api_ai_test():
-    """Real end-to-end AI test — actually sends a prompt through configured provider."""
-    # Simple prompt that should get a short response regardless of configuration
+    """Real end-to-end CLI test."""
     prompt = "Reply with exactly 'OK' in one word. Nothing else."
-    provider = SETTINGS.get("ai_provider", "cli")
-
-    if provider == "openai_compatible" and _openai_http_ready():
-        ok, text, err = openai_chat_completion([{"role": "user", "content": prompt}], timeout=30)
-    else:
-        ok, text, err = run_claude(prompt, timeout=30, project=None, force_cli=False)
+    ok, text, err = run_claude(prompt, timeout=30, project=None)
 
     resp = (text or "").strip()[:500]
     result = {
         "ok": ok,
-        "provider": provider,
+        "provider": "cli",
         "response": resp,
         "valid": ok and len(resp) > 0,
     }
     if err:
         result["error"] = err[:300]
-    # For CLI mode, also include CLI probe info
-    if provider != "openai_compatible":
-        try:
-            cli_info = api_cli_test()
-            result["cli_probe"] = cli_info
-        except Exception:
-            pass
+    try:
+        cli_info = api_cli_test()
+        result["cli_probe"] = cli_info
+    except Exception:
+        pass
     return result
 
 
@@ -5157,14 +5024,10 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/review/list":
                 return self._json(do_review_list(project_slug=q_project))
             if path == "/api/settings":
-                proj = _resolve_project(q_project)
                 cli_types_list = [{"id": k, "label": v.get("label", k), "default_binary": v.get("default_binary", ""), "wrapper_prefix": v.get("wrapper_prefix", "")} for k, v in CLI_TYPES.items()]
                 return self._json({
                     "settings": _settings_for_response(),
-                    "project_model": proj.model if not proj.is_legacy else SETTINGS.get("model", "default"),
-                    "project_slug": proj.slug,
-                    "models": AVAILABLE_MODELS,
-                    "http_presets": HTTP_PRESETS,
+                    "project_slug": q_project or "",
                     "cli_types": cli_types_list,
                     "llm_ui": _build_llm_ui(),
                 })
@@ -5180,9 +5043,8 @@ class Handler(SimpleHTTPRequestHandler):
                         pass
                 return self._json({"last_date": last, "days_ago": days_ago})
             if path == "/api/schedules":
-                schedules = _sched_load()[0]
-                return self._json({"ok": True, "schedules": schedules})
-            # API path but no match
+                return self._json(list_schedules_api())
+            # API 경로인데 매칭 안 됨
             if path.startswith("/api/"):
                 return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
             # static file
@@ -5312,40 +5174,16 @@ class Handler(SimpleHTTPRequestHandler):
                     body.get("project", None),
                 ))
             if path == "/api/settings":
-                _AI_KEYS = (
-                    "cli_type", "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra", "ai_provider",
-                    "openai_base_url", "openai_model", "openai_api_key",
-                    "http_temperature", "http_max_tokens",
-                    "active_ai_profile", "ai_profiles",
-                )
+                _AI_KEYS = ("cli_type", "claude_cli_binary", "claude_cli_extra_args", "cli_path_extra")
                 if any(k in body for k in _AI_KEYS):
                     mr = merge_dashboard_settings(body)
                     if not mr.get("ok"):
                         return self._json(mr, code=400)
-                if "model" not in body:
-                    return self._json({
-                        "ok": True,
-                        "settings": _settings_for_response(),
-                        "llm_ui": _build_llm_ui(),
-                    })
-                model = body.get("model", "default")
-                valid = [m["id"] for m in AVAILABLE_MODELS]
-                if model not in valid:
-                    return self._json({"ok": False, "error": f"Unknown model: {model}"})
-                proj = project_registry.get_project(p_slug)
-                if proj.is_legacy:
-                    SETTINGS["model"] = model
-                    _save_settings(SETTINGS)
-                    return self._json({"ok": True, "project": "", "settings": _settings_for_response(), "llm_ui": _build_llm_ui()})
-                try:
-                    updated = project_registry.update_project_settings(proj.slug, model=model)
-                    return self._json({
-                        "ok": True, "project": updated.slug, "model": updated.model,
-                        "settings": _settings_for_response(),
-                        "llm_ui": _build_llm_ui(),
-                    })
-                except ValueError as e:
-                    return self._json({"ok": False, "error": str(e)})
+                return self._json({
+                    "ok": True,
+                    "settings": _settings_for_response(),
+                    "llm_ui": _build_llm_ui(),
+                })
             if path == "/api/ai/test":
                 return self._json(api_ai_test())
             if path == "/api/cli/test":
@@ -5370,23 +5208,8 @@ class Handler(SimpleHTTPRequestHandler):
 
             # ─── Schedules ───────────────────────────────────────────────
             if path == "/api/schedules":
-                # POST: create or update
-                sched = body
-                if not sched.get("id"):
-                    import hashlib
-                    sched["id"] = hashlib.md5(sched.get("name", "").encode()).hexdigest()[:8]
-                schedules = _sched_load()[0]
-                # Update if exists
-                updated = False
-                for i, s in enumerate(schedules):
-                    if s.get("id") == sched["id"]:
-                        schedules[i] = sched
-                        updated = True
-                        break
-                if not updated:
-                    schedules.append(sched)
-                _save_sched_files(schedules)
-                return self._json({"ok": True, "schedule": sched})
+                result = upsert_schedule_api(body)
+                return self._json(result, code=200 if result.get("ok") else 400)
 
             if path.startswith("/api/schedules/") and self.command == "DELETE":
                 sched_id = path.split("/api/schedules/")[-1].split("/")[0]
@@ -5412,20 +5235,14 @@ class Handler(SimpleHTTPRequestHandler):
             if path.startswith("/api/schedules/") and path.endswith("/toggle"):
                 parts = path.split("/")
                 sched_id = parts[-2]
-                schedules = _sched_load()[0]
-                for s in schedules:
-                    if s.get("id") == sched_id:
-                        s["enabled"] = not s.get("enabled", False)
-                        break
-                _save_sched_files(schedules)
-                return self._json({"ok": True})
+                result = toggle_schedule_api(sched_id)
+                return self._json(result, code=200 if result.get("ok") else 404)
 
             if path == "/api/projects/create":
                 return self._json(create_project_api(
                     body.get("slug", ""),
                     body.get("title", ""),
                     body.get("description", ""),
-                    body.get("model", "default"),
                     body.get("template", ""),
                 ))
             if path == "/api/projects/switch":
@@ -5433,7 +5250,6 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/projects/update":
                 return self._json(update_project_api(
                     body.get("slug", ""),
-                    model=body.get("model"),
                     title=body.get("title"),
                     description=body.get("description"),
                 ))
@@ -5476,10 +5292,8 @@ class Handler(SimpleHTTPRequestHandler):
             # ─── Schedules DELETE ──────────────────────────────────────
             if path.startswith("/api/schedules/"):
                 sched_id = path.split("/api/schedules/")[-1].split("/")[0]
-                schedules = SETTINGS.get("schedules", [])
-                SETTINGS["schedules"] = [s for s in schedules if s.get("id") != sched_id]
-                _save_settings(SETTINGS)
-                return self._json({"ok": True})
+                result = delete_schedule_api(sched_id)
+                return self._json(result, code=200 if result.get("ok") else 404)
             return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
         except BrokenPipeError:
             pass

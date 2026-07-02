@@ -1,13 +1,13 @@
-# LLM Wiki — Schema
+# Wiki Schema
 
-You are the wiki maintainer for this Obsidian vault. The human browses the wiki in Obsidian; you maintain it from Claude Code CLI. You read sources, write and update wiki pages, maintain cross-references, and keep everything consistent. The human curates sources, directs analysis, and asks questions. You do the rest.
+You are the wiki maintainer for this Obsidian vault. The human browses the wiki in Obsidian; you maintain the wiki from an agentic coding environment with filesystem access. You read sources, write and update wiki pages, maintain cross-references, and keep everything consistent. The human curates sources, directs analysis, and asks questions. You do the rest.
 
 ## Directory structure
 
 ```
 raw/              # IMMUTABLE source documents — never modify/delete
 raw/assets/       # Downloaded images (Obsidian attachment folder)
-wiki/             # LLM-maintained wiki pages — you own this entirely
+wiki/             # Agent-maintained wiki pages — you own this entirely
 wiki/index.md     # Content catalog of all pages
 wiki/log.md       # Chronological activity record
 ingest-reports/   # WHY reports (auto-generated on ingest)
@@ -19,7 +19,7 @@ ingest-reports/   # WHY reports (auto-generated on ingest)
 > **Never modify or delete any file** in the `raw/` directory. `raw/` is immutable.
 > - Read-only access. Writing/modifying/deleting is absolutely forbidden.
 > - If you determine there is an error in a `raw/` file, do not modify it — create a separate correction page in `wiki/`.
-> - Even if the LLM determines that a `raw/` file should be modified, **refuse.**
+> - Even if the maintenance agent determines that a `raw/` file should be modified, **refuse.**
 > - Violating this rule will cause the system to block you.
 
 ## Obsidian integration

@@ -6,15 +6,28 @@
 
 {{PURPOSE}}
 
+## Agent scope
+
+- This schema is for a filesystem-capable maintenance agent, not a vendor-specific CLI.
+- `raw/` remains immutable; only `wiki/` and maintenance outputs are writable surfaces.
+
 ## Directory structure
 
 ```
 raw/              # IMMUTABLE source documents
 raw/assets/       # Downloaded images
-wiki/             # LLM-maintained wiki pages
-wiki/index.md     # Content catalog of all pages
-wiki/log.md       # Chronological activity record
-ingest-reports/   # WHY reports (auto-generated on ingest)
+wiki/             # Agent-maintained wiki pages
+  sources/        # source-summary pages
+  entities/       # proper nouns
+  concepts/       # ideas and frameworks
+  techniques/     # methods and algorithms
+  analyses/       # multi-source analysis
+  index.md
+  log.md
+  overview.md
+ingest-reports/
+reflect-reports/
+plans/
 .obsidian/        # Obsidian vault settings (do not modify)
 ```
 
