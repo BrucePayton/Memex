@@ -334,3 +334,75 @@ def append_log_entry(wiki_dir: "Path", action: str, title: str, description: str
             os.fsync(f.fileno())
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+# ─── Knowledge Card Schemas ───
+
+# Required and optional fields for each card type.
+# Used for validation on creation and lint completeness checks.
+CARD_SCHEMAS: dict[str, dict] = {
+    "process-card": {
+        "required": ["owner", "effective_date", "applicable_roles", "involved_orgs", "purpose", "steps_summary"],
+        "optional": [
+            "dependent_systems", "business_category", "related_entities",
+            "process_category", "exception_handling", "related_assets",
+            "approval_form_fields", "approval_link",
+        ],
+        # process_category values: "approval" | "operations" | "after-sales" | "maintenance" | "exception"
+    },
+    "metric-card": {
+        "required": ["name_en", "definition", "thresholds", "related_entities"],
+        "optional": ["uom", "measurement_method"],
+    },
+    "org-card": {
+        "required": ["head", "related_processes"],
+        "optional": [
+            "parent_org", "members", "related_metrics",
+            "org_category", "brand_name", "product_categories",
+            "regional_contacts", "support_hotline", "service_address",
+        ],
+        # org_category values: "internal-dept" | "supplier" | "brand" | "vendor" | "service-provider"
+    },
+    "rule-card": {
+        "required": ["condition", "scope", "source_sop", "violation_consequence"],
+        "optional": [
+            "effective_date", "related_entities",
+            "rule_category", "warranty_period", "brand",
+            "product_category", "claim_conditions", "exclusion_conditions",
+            "support_contact",
+        ],
+        # rule_category values: "business-rule" | "warranty" | "compliance" | "operational"
+    },
+}
+
+# All card types (for iteration and validation)
+CARD_TYPES = set(CARD_SCHEMAS.keys())
+
+
+def validate_card_card(page_type: str, frontmatter: dict) -> dict:
+    """Validate a knowledge card's frontmatter against its schema.
+
+    Returns a dict with:
+        ok: bool
+        missing_sections: list[str] — fields missing from frontmatter
+        warnings: list[str] — recommended but not required fields absent
+    """
+    schema = CARD_SCHEMAS.get(page_type)
+    if not schema:
+        return {"ok": True, "missing_sections": [], "warnings": []}
+
+    missing = []
+    warnings = []
+    for field in schema["required"]:
+        if field not in frontmatter or not frontmatter[field]:
+            missing.append(f"{field}: required_source")
+
+    for field in schema["optional"]:
+        if field not in frontmatter or not frontmatter[field]:
+            warnings.append(f"{field}: recommended_but_missing")
+
+    return {
+        "ok": len(missing) == 0,
+        "missing_sections": missing,
+        "warnings": warnings,
+    }

@@ -227,6 +227,7 @@ TEMPLATE_FOLDERS: dict[str, list[str]] = {
     "llm-research": ["sources", "models", "techniques", "concepts", "entities", "benchmarks", "analyses"],
     "reading-log": ["sources", "authors", "ideas", "quotes", "reviews"],
     "personal-notes": ["daily", "topics", "people", "projects"],
+    "process-knowledge": ["org", "rules", "metrics", "concepts", "steps"],
 }
 
 
@@ -320,6 +321,17 @@ def create_project(
     for e in reg.get("projects", []):
         if e.get("slug") == slug:
             raise ValueError(f"slug already exists: {slug}")
+
+    # process-knowledge uniqueness: same process name cannot create duplicate project
+    if template == "process-knowledge":
+        for e in reg.get("projects", []):
+            existing_title = (e.get("title") or "").lower().strip()
+            if existing_title == title.lower().strip():
+                raise ValueError(
+                    f"Process [{title}] already exists in project [{e['slug']}] "
+                    f"(created {e.get('created', 'unknown')}). "
+                    f"Please use the existing project or change the process name."
+                )
 
     root = PROJECTS_DIR / slug
     if root.exists():

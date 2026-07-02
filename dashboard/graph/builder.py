@@ -100,6 +100,34 @@ def build_wiki_data(
             nodes.append({"id": target, "label": stub_label, "type": "missing"})
             node_ids.add(target)
 
+    # ─── Process step graph: scan wiki/steps/*/index.md ───
+    steps_dir = wiki_dir / "steps"
+    if steps_dir.is_dir():
+        for step_index in sorted(steps_dir.glob("*/index.md")):
+            step_name = step_index.parent.name
+            try:
+                step_text = step_index.read_text(encoding="utf-8")
+                step_meta, _step_body = parse_fm(step_text)
+                if step_meta.get("type") == "process-step":
+                    step_id = f"steps/{step_name}/index.md"
+                    if step_id not in node_ids:
+                        nodes.append({
+                            "id": step_id,
+                            "label": step_meta.get("title", step_name),
+                            "type": "process-step",
+                        })
+                        node_ids.add(step_id)
+                    # upstream → depends_on edges (upstream → this)
+                    for up in step_meta.get("upstream_steps", []) or []:
+                        up_id = f"steps/{up}/index.md"
+                        edges.append({"from": up_id, "to": step_id, "kind": "depends_on"})
+                    # downstream → precedes edges (this → downstream)
+                    for down in step_meta.get("downstream_steps", []) or []:
+                        down_id = f"steps/{down}/index.md"
+                        edges.append({"from": step_id, "to": down_id, "kind": "precedes"})
+            except Exception:
+                pass  # skip unparseable step files
+
     # Log entries
     log_entries = []
     lf = wiki_dir / "log.md"

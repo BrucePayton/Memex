@@ -150,6 +150,104 @@ def neighbors(
     return {"ok": True, "node": resolved, "neighbors": neighbor_list, "degree": len(neighbor_list)}
 
 
+def step_dependency_path(
+    wiki_dir: Path,
+    step_name: str = "",
+) -> dict:
+    """Return the dependency chain for a given process step.
+
+    Follows upstream_steps and downstream_steps declared in
+    wiki/steps/*/index.md frontmatter to build the full chain.
+
+    Returns {ok, step, chain: [step_ids], upstream: [...], downstream: [...]}
+    """
+    nodes, edges, _ = build_graph_data(wiki_dir)
+
+    # Find all step nodes
+    step_nodes = {
+        n["filename"]: n
+        for n in nodes
+        if n.get("type") == "process-step"
+    }
+
+    if not step_nodes:
+        return {"ok": False, "error": "no process-step nodes found in graph"}
+
+    # Build adjacency from dependency edges
+    upstream_of: dict[str, list[str]] = {}
+    downstream_of: dict[str, list[str]] = {}
+    for e in edges:
+        kind = e.get("kind", "")
+        if kind == "depends_on":
+            downstream_of.setdefault(e["from"], []).append(e["to"])
+            upstream_of.setdefault(e["to"], []).append(e["from"])
+        elif kind == "precedes":
+            downstream_of.setdefault(e["from"], []).append(e["to"])
+            upstream_of.setdefault(e["to"], []).append(e["from"])
+
+    # Resolve target step
+    target_id = None
+    search = step_name.lower().strip()
+    for sid, sn in step_nodes.items():
+        if search in sid.lower() or search in sn.get("label", "").lower():
+            target_id = sid
+            break
+
+    if not target_id and step_nodes:
+        # Return all steps if no specific step requested
+        step_list = [
+            {"id": sid, "label": sn.get("label", sid), "type": "process-step"}
+            for sid, sn in sorted(step_nodes.items())
+        ]
+        return {
+            "ok": True,
+            "step": None,
+            "chain": [s["id"] for s in step_list],
+            "upstream": [],
+            "downstream": [],
+            "all_steps": step_list,
+        }
+
+    if not target_id:
+        return {"ok": False, "error": f"step not found: {step_name}"}
+
+    # Walk upstream
+    upstream_chain = []
+    visited = set()
+    queue = deque([target_id])
+    while queue:
+        cur = queue.popleft()
+        if cur in visited:
+            continue
+        visited.add(cur)
+        for up in upstream_of.get(cur, []):
+            if up not in visited:
+                upstream_chain.append(up)
+                queue.append(up)
+
+    # Walk downstream
+    downstream_chain = []
+    visited.add(target_id)
+    queue = deque([target_id])
+    while queue:
+        cur = queue.popleft()
+        for down in downstream_of.get(cur, []):
+            if down not in visited:
+                visited.add(down)
+                downstream_chain.append(down)
+                queue.append(down)
+
+    chain = upstream_chain[::-1] + [target_id] + downstream_chain
+
+    return {
+        "ok": True,
+        "step": target_id,
+        "chain": chain,
+        "upstream": upstream_chain,
+        "downstream": downstream_chain,
+    }
+
+
 def god_nodes(
     wiki_dir: Path,
     top_n: int = 10,

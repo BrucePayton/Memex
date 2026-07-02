@@ -103,6 +103,22 @@ Run **all** checks:
 - source_count 1 but broad generalizations
 - confidence high but source_count < 2
 
+### Knowledge Cards (process-card, metric-card, org-card, rule-card)
+- For each card page, check that all required fields are present in frontmatter
+- Required fields per type:
+  * process-card: owner, effective_date, applicable_roles, involved_orgs, purpose, steps_summary
+  * metric-card: name_en, definition, thresholds, related_entities
+  * org-card: head, related_processes
+  * rule-card: condition, scope, source_sop, violation_consequence
+- Missing required fields should be recorded in missing_sections frontmatter array
+- When a missing field has been filled, remove its entry from missing_sections
+- **Category consistency checks**:
+  * process-card with process_category="approval" should have approval_link or approval_form_fields
+  * org-card with org_category="brand" should have brand_name, support_hotline, or regional_contacts
+  * rule-card with rule_category="warranty" should have warranty_period, brand, or claim_conditions
+  * rule-card with rule_category="business-rule" should have condition and scope filled
+  * Category values must be from the allowed set (see CLAUDE.md)
+
 Report format:
 ## Lint Report — {today}
 ### Critical (must fix)
@@ -740,3 +756,42 @@ def op_write(topic: str, length: str = "medium", style: str = "blog", project: s
 
 def op_validate_links(project: str = "") -> dict:
     return validate_links(project)
+
+
+def check_card_missing_sections(filepath: str) -> dict:
+    """Validate a card page and return missing_sections entries.
+
+    Reads the file, parses frontmatter, checks against CARD_SCHEMAS,
+    and returns which required fields are missing.
+    """
+    from dashboard.models import CARD_SCHEMAS, CARD_TYPES, parse_fm
+
+    p = Path(filepath)
+    if not p.exists():
+        return {"ok": False, "error": f"file not found: {filepath}"}
+
+    text = p.read_text(encoding="utf-8")
+    meta, _ = parse_fm(text)
+    page_type = meta.get("type", "")
+
+    if page_type not in CARD_TYPES:
+        return {"ok": True, "is_card": False, "missing_sections": []}
+
+    schema = CARD_SCHEMAS[page_type]
+    missing = []
+    for field in schema["required"]:
+        if field not in meta or not meta[field]:
+            missing.append(f"{field}: required_source")
+
+    current_missing = meta.get("missing_sections", [])
+    if isinstance(current_missing, str):
+        current_missing = [current_missing] if current_missing else []
+
+    return {
+        "ok": len(missing) == 0,
+        "is_card": True,
+        "page_type": page_type,
+        "missing_sections": missing,
+        "previously_missing": current_missing,
+        "newly_filled": [f for f in current_missing if not any(f.startswith(m.split(":")[0]) for m in missing)],
+    }

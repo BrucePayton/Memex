@@ -44,7 +44,7 @@
       "description": "专门用来进行行业分类标准的知识维护",
       "model": "default",
       "created": "2026-05-04",
-      "last_used": "2026-06-11",
+      "last_used": "2026-07-02",
       "template": "llm-research"
     },
     {
@@ -62,7 +62,7 @@
       "description": "深圳市各类应急预案文档的知识管理库，涵盖自然灾害、公共卫生、社会安全、事故灾难四大类30份预案的结构化wiki卡片，建立双向索引和跨模块关联",
       "model": "default",
       "created": "2026-07-01",
-      "last_used": "2026-07-01",
+      "last_used": "2026-07-02",
       "template": ""
     }
   ]

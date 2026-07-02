@@ -1397,6 +1397,14 @@ def _graph_god_nodes_api(proj, top_n=10):
     return {"project": proj.slug, "god_nodes": result}
 
 
+def _graph_step_path_api(proj, step_name=""):
+    """Return the dependency chain for process steps in the wiki graph."""
+    from dashboard.graph.paths import step_dependency_path
+    result = step_dependency_path(proj.wiki_dir, step_name)
+    result["project"] = proj.slug
+    return result
+
+
 def _graph_community_api_enhanced(proj):
     """Community detection using graphify's Leiden algorithm."""
     G, node_map = _build_nx_graph(proj)
@@ -1884,7 +1892,7 @@ canvas{{width:100vw;height:100vh;cursor:grab}}
 <div id="legend"></div>
 <canvas id="cv"></canvas>
 <script>
-var TC={{source:'#3fb950',entity:'#58a6ff',concept:'#bc8cff',analysis:'#39d2c0',overview:'#8b949e',missing:'#f85149',unknown:'#8b949e'}};
+var TC={{source:'#059669',entity:'#2563eb',concept:'#7c3aed',analysis:'#39d2c0',overview:'#8b949e',missing:'#f85149',unknown:'#8b949e','process-step':'#16a34a','process-card':'#15803d','metric-card':'#7c3aed','org-card':'#2563eb','rule-card':'#d97706'}};
 var nodes={nodes_json},edges={edges_json};
 var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 function resize(){{cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;ctx.scale(devicePixelRatio,devicePixelRatio);}}
@@ -1897,7 +1905,18 @@ var hov=null,drag=null;
 var types={{}};ns.forEach(function(n){{types[n.type]=true;}});
 var lg=document.getElementById('legend');
 Object.keys(types).forEach(function(tp){{lg.innerHTML+='<span><i style="background:'+(TC[tp]||'#8b949e')+'"></i>'+tp+'</span>';}});
-function tick(){{
+// Progressive render: reveal nodes in layers with fade-in/scale animation
+var RENDER_DELAY_MS=150,BATCH_SIZE=6,_t0=performance.now();
+var _revealOrder=[];ns.forEach(function(n){{if(n.type==='process-step')_revealOrder.unshift(n);else _revealOrder.push(n);}});
+var _nextIdx=0,_lastT=0;
+for(var i in ns){{ns[i].alpha=0;ns[i].scale=0;ns[i].visible=false;}}
+for(var j in es){{es[j].alpha=0;}}
+
+function tick(now){{
+  if(_nextIdx<_revealOrder.length&&now-_lastT>RENDER_DELAY_MS){{
+    for(var b=0;b<BATCH_SIZE&&_nextIdx<_revealOrder.length;b++)_revealOrder[_nextIdx++].visible=true;
+    _lastT=now;
+  }}
   var cx=W/2,cy=H/2;
   for(var n of ns){{n.vx+=(cx-n.x)*.001;n.vy+=(cy-n.y)*.001;}}
   for(var i=0;i<ns.length;i++)for(var j=i+1;j<ns.length;j++){{
@@ -1911,18 +1930,24 @@ function tick(){{
   for(var n of ns){{
     if(n===drag)continue;n.vx*=.82;n.vy*=.82;
     n.x+=n.vx;n.y+=n.vy;n.x=Math.max(n.r,Math.min(W-n.r,n.x));n.y=Math.max(n.r,Math.min(H-n.r,n.y));
+    if(n.visible){{n.alpha=Math.min(1,n.alpha+.05);n.scale=Math.min(1,n.scale+.05);}}
   }}
   ctx.clearRect(0,0,W,H);
   for(var e of es){{
+    if(!e.s.visible||!e.t.visible)continue;e.alpha=Math.min(1,e.alpha+.04);
     var hi=hov&&(e.s.id===hov.id||e.t.id===hov.id);
-    ctx.strokeStyle=hi?'#58a6ff66':'#30363d';ctx.lineWidth=hi?2:1;
+    ctx.globalAlpha=e.alpha;ctx.strokeStyle=hi?'#58a6ff66':'#30363d';ctx.lineWidth=hi?2:1;
     ctx.beginPath();ctx.moveTo(e.s.x,e.s.y);ctx.lineTo(e.t.x,e.t.y);ctx.stroke();
+    ctx.globalAlpha=1;
   }}
   for(var n of ns){{
-    var c=TC[n.type]||'#8b949e',hi=hov&&hov.id===n.id;
-    ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+    if(!n.visible)continue;
+    var c=TC[n.type]||'#8b949e',hi=hov&&hov.id===n.id,s=n.scale;
+    ctx.save();ctx.translate(n.x,n.y);ctx.scale(s,s);
+    ctx.beginPath();ctx.arc(0,0,n.r,0,Math.PI*2);
     ctx.fillStyle=hi?c:c+'88';ctx.fill();
     if(hi){{ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();}}
+    ctx.restore();
     ctx.fillStyle=hi?'#e6edf3':'#8b949e';ctx.font=(hi?'12':'10')+'px sans-serif';ctx.textAlign='center';
     ctx.fillText(n.label,n.x,n.y+n.r+13);
   }}
@@ -2523,6 +2548,73 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
         "edges": all_edges,
         "bridges": bridges,
     }
+
+
+def _universe_dimension_aggregation(dimension: str = "") -> dict:
+    """Aggregate nodes across all process-knowledge projects by dimension.
+
+    Groups nodes by dimension type (org/rules/metrics/concepts) across all
+    process-knowledge projects. Each group shows project-level subgroups.
+
+    Args:
+        dimension: filter to a specific dimension (org/rules/metrics/concepts).
+                   Empty = return all dimensions.
+    """
+    all_dims = {"org", "rules", "metrics", "concepts"}
+    target_dims = {dimension} if dimension in all_dims else all_dims
+
+    result: dict[str, dict] = {d: {"projects": {}, "total_nodes": 0} for d in target_dims}
+
+    for proj in project_registry.list_projects():
+        if proj.template != "process-knowledge":
+            continue
+        dim_nodes: dict[str, list] = {d: [] for d in target_dims}
+        wiki_dir = proj.root / "wiki"
+        if not wiki_dir.is_dir():
+            continue
+
+        for md_file in sorted(wiki_dir.glob("**/*.md")):
+            rel = str(md_file.relative_to(wiki_dir))
+            try:
+                text = md_file.read_text(encoding="utf-8")
+                meta, _ = parse_fm(text)
+                # Determine dimension from folder path
+                folder = rel.split("/")[0] if "/" in rel else ""
+                wp_type = meta.get("type", "unknown")
+                # Classify: folder-based dimension OR card type mapping
+                dim = None
+                if folder in target_dims:
+                    dim = folder
+                elif wp_type == "metric-card":
+                    dim = "metrics"
+                elif wp_type == "org-card":
+                    dim = "org"
+                elif wp_type == "rule-card":
+                    dim = "rules"
+                elif wp_type == "process-card":
+                    dim = "concepts"
+
+                if dim and dim in target_dims:
+                    dim_nodes[dim].append({
+                        "id": rel,
+                        "title": meta.get("title", md_file.stem),
+                        "type": wp_type,
+                        "folder": folder,
+                    })
+            except Exception:
+                pass
+
+        proj_slug = proj.slug
+        for dim_name, nodes in dim_nodes.items():
+            if nodes:
+                result[dim_name]["projects"][proj_slug] = {
+                    "title": proj.title,
+                    "nodes": nodes,
+                    "count": len(nodes),
+                }
+                result[dim_name]["total_nodes"] += len(nodes)
+
+    return {"ok": True, "dimensions": result}
 
 
 # ─── status ───
@@ -4811,6 +4903,10 @@ class Handler(SimpleHTTPRequestHandler):
                 proj = _resolve_project(q_project)
                 nid = (qs.get("node", [""])[0] or "").strip()
                 return self._json(_graph_neighbors_api(proj, nid))
+            if path == "/api/graph/step-path":
+                proj = _resolve_project(q_project)
+                step = (qs.get("step", [""])[0] or "").strip()
+                return self._json(_graph_step_path_api(proj, step))
             if path == "/api/graph/insights":
                 proj = _resolve_project(q_project)
                 return self._json(_graph_insights_api(proj))

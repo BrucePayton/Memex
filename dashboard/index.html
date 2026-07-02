@@ -1372,6 +1372,13 @@ async function openNewProjectModal(){
   document.getElementById('newProjDesc').value='';
   document.getElementById('newProjTemplate').value='';
   await loadTemplates();
+  var ts = document.getElementById('newProjTemplate');
+  ts.innerHTML = '<option value="">generic (default)</option>';
+  if (TEMPLATE_DEFS && TEMPLATE_DEFS.length) {
+    TEMPLATE_DEFS.forEach(function(tmpl){
+      ts.innerHTML += '<option value="'+tmpl.name+'">'+tmpl.name+' ('+tmpl.folders.length+' folders)</option>';
+    });
+  }
   previewProjectFolders();
   document.getElementById('modalNewProject').classList.add('show');
   setTimeout(function(){document.getElementById('newProjTitle').focus();},50);

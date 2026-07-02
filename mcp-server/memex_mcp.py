@@ -120,6 +120,35 @@ def _today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def _validate_process_dimension(proj, folder_path: str) -> None:
+    """Validate process-knowledge project dimension structure.
+
+    Process knowledge projects only allow:
+    - Top-level: org, rules, metrics, concepts, steps
+    - Under steps/<name>/: org, rules, metrics, concepts only
+    """
+    if proj.template != "process-knowledge":
+        return
+    allowed_top = {"org", "rules", "metrics", "concepts", "steps"}
+    allowed_step_dim = {"org", "rules", "metrics", "concepts"}
+    parts = [p for p in folder_path.strip("/").split("/") if p]
+    if not parts:
+        return
+    top = parts[0]
+    if top not in allowed_top:
+        raise ValueError(
+            f"Process knowledge projects only support {sorted(allowed_top)} dimensions "
+            f"and business step sub-folders. Cannot create [{top}]."
+        )
+    if len(parts) >= 2 and parts[0] == "steps":
+        dim = parts[1] if len(parts) > 1 else ""
+        if dim and dim not in allowed_step_dim:
+            raise ValueError(
+                f"Under business steps, only {sorted(allowed_step_dim)} dimensions "
+                f"are allowed. Cannot create [{dim}]."
+            )
+
+
 # ─── HTTP async call layer (all graph tools call dashboard API) ──────────────
 
 def _dashboard_base_url() -> str:
@@ -497,6 +526,10 @@ def create_page(
     if not title.strip():
         return {"ok": False, "error": "title required"}
     proj = _resolve(project)
+    try:
+        _validate_process_dimension(proj, folder)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     proj.wiki_dir.mkdir(parents=True, exist_ok=True)
     slug = project_registry.make_slug(title)
     base = proj.wiki_dir / folder if folder else proj.wiki_dir
@@ -567,6 +600,11 @@ def update_page(filename: str, content: str, project: str = "") -> dict:
 def create_folder(name: str, parent: str = "", project: str = "") -> dict:
     """Create a folder under wiki/ (or under wiki/<parent>/)."""
     proj = _resolve(project)
+    try:
+        folder_path = f"{parent}/{name}" if parent else name
+        _validate_process_dimension(proj, folder_path)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     proj.wiki_dir.mkdir(parents=True, exist_ok=True)
     base = proj.wiki_dir / parent if parent else proj.wiki_dir
     base = base.resolve()
@@ -955,6 +993,21 @@ async def graph_neighbors(node_id: str, project: str = "") -> dict:
     proj = _resolve(project)
     return graph_neighbors_fn(proj.wiki_dir, node_id)
 
+
+
+@mcp.tool()
+async def graph_step_path(step_name: str = "", project: str = "") -> dict:
+    """Return the dependency chain for process steps in the wiki graph.
+
+    For process-knowledge projects, steps are defined in wiki/steps/*/index.md
+    with upstream_steps and downstream_steps frontmatter fields. This tool
+    follows those dependency declarations to build the full step chain.
+
+    If step_name is empty, returns all process-step nodes found in the graph.
+    """
+    from dashboard.graph.paths import step_dependency_path
+    proj = _resolve(project)
+    return step_dependency_path(proj.wiki_dir, step_name)
 
 @mcp.tool()
 async def graph_insights(project: str = "") -> dict:
