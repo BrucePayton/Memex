@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-build.py — wiki/ 마크다운을 파싱하여 dashboard/data.json 생성.
-의존성 없음 (Python 3.10+ 표준 라이브러리만 사용).
+build.py — parse wiki/ markdown to generate dashboard/data.json.
+No dependencies (Python 3.10+ stdlib only).
 
 Usage:
-    python dashboard/build.py       # 프로젝트 루트에서
-    python build.py                 # dashboard/ 안에서
+    python dashboard/build.py       # from project root
+    python build.py                 # from dashboard/
 """
 
 import json, os, re, sys
@@ -27,7 +27,7 @@ if str(SCRIPT_DIR.parent) not in sys.path:
 from dashboard.models import FRONTMATTER_RE, WIKILINK_RE
 
 YAML_LIST_RE = re.compile(r"\[(.*?)\]")
-# [text](file.md) 전통 링크도 지원
+# [text](file.md) traditional links also supported
 MDLINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+\.md)\)")
 LOG_ENTRY_RE = re.compile(r"^## \[(\d{4}-\d{2}-\d{2})\] (\w+) \| (.+)$", re.MULTILINE)
 
@@ -60,7 +60,7 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
 def extract_links(body: str) -> list[str]:
     wikilinks = {m.group(1).strip() for m in WIKILINK_RE.finditer(body)}
     mdlinks = {m[1] for m in MDLINK_RE.findall(body)}
-    # normalize: wikilink targets에 .md 붙이기
+    # normalize: append .md to wikilink targets
     all_links = set()
     for link in wikilinks:
         if not link.endswith(".md"):

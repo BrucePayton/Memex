@@ -8,28 +8,28 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 :root{
-  /* ── Black & White 팔레트 ── */
-  --bg:#0a0a0a;           /* 가장 어두운 배경 */
-  --bg2:#141414;          /* 카드/사이드바 */
-  --bg3:#1e1e1e;          /* 호버/활성 */
-  --bg4:#2a2a2a;          /* 강조 호버 */
-  --border:#2a2a2a;       /* 기본 경계 */
-  --border2:#3a3a3a;      /* 강조 경계 */
-  --text:#f5f5f5;         /* 메인 텍스트 */
-  --text2:#d0d0d0;        /* 보조 텍스트 */
-  --muted:#808080;        /* 뮤트된 텍스트 */
-  --muted2:#606060;       /* 더 뮤트 */
+  /* ── Black & White Palette ── */
+  --bg:#0a0a0a;           /* darkest background */
+  --bg2:#141414;          /* cards/sidebar */
+  --bg3:#1e1e1e;          /* hover/active */
+  --bg4:#2a2a2a;          /* emphasis hover */
+  --border:#2a2a2a;       /* default border */
+  --border2:#3a3a3a;      /* emphasis border */
+  --text:#f5f5f5;         /* main text */
+  --text2:#d0d0d0;        /* secondary text */
+  --muted:#808080;        /* muted text */
+  --muted2:#606060;       /* more muted */
 
-  /* 흑백 액센트 */
-  --accent:#ffffff;       /* 순수 흰색 — 주요 강조 */
+  /* monochrome accent */
+  --accent:#ffffff;       /* pure white — primary emphasis */
   --accent-dim:rgba(255,255,255,0.08);
 
-  /* 상태 색 (가독성 필요) */
+  /* status colors (need readability) */
   --green:#4ade80;
   --orange:#fb923c;
   --red:#f87171;
 
-  /* 타입 뱃지 — 흑백 계조 */
+  /* type badges — monochrome gradation */
   --t1:#e5e5e5;  /* source */
   --t2:#c0c0c0;  /* entity */
   --t3:#a0a0a0;  /* concept */
@@ -37,7 +37,7 @@
   --t5:#606060;  /* analysis */
   --t6:#404040;  /* overview */
 
-  /* 타이포 & 레이아웃 */
+  /* typography & layout */
   --font:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Helvetica,Arial,sans-serif;
   --mono:'SF Mono','JetBrains Mono','Fira Code',Menlo,monospace;
   --r-sm:4px; --r-md:6px; --r-lg:10px; --r-xl:14px;
@@ -49,7 +49,7 @@
   --d-med:200ms;
   --d-slow:300ms;
 
-  /* 사이드바 너비 (JS에서 동적 변경) */
+  /* sidebar width (dynamically changed by JS) */
   --side-w:280px;
 }
 
@@ -62,13 +62,13 @@ button{cursor:pointer;transition:all var(--d-fast) var(--ease);}
 button:active{transform:scale(0.97);}
 
 /* ── Layout (Flexbox) ── */
-/* header는 위에 고정, 아래 body-row는 flex로 사이드바 + 메인 나란히. */
+/* header fixed at top, body-row below is flex: sidebar + main side by side. */
 .app{display:flex;flex-direction:column;height:100vh;position:relative;overflow:hidden}
 .body-row{flex:1;display:flex;min-height:0;position:relative}
 .side{flex-shrink:0;width:var(--side-w);overflow:hidden;transition:width var(--d-med) var(--ease)}
 .app.side-hidden .side{width:0}
 
-/* 사이드바 리사이즈 핸들 — body-row 기준 */
+/* sidebar resize handle — relative to body-row */
 .side-handle{position:absolute;top:0;left:var(--side-w);bottom:0;width:6px;transform:translateX(-3px);cursor:ew-resize;z-index:40;transition:background var(--d-fast), left var(--d-med) var(--ease)}
 .side-handle:hover,.side-handle.dragging{background:var(--accent-dim)}
 .app.side-hidden .side-handle{display:none}
@@ -108,7 +108,7 @@ header h1 .logo-mark .eye{fill:var(--bg2)}
 .slist{flex:1;overflow-y:auto;padding:8px 0}
 .grp-label{padding:8px 16px 4px;font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:0.08em;font-weight:600}
 
-/* 페이지 리스트 아이템 */
+/* page list item */
 .item{padding:7px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;border-left:2px solid transparent;transition:all var(--d-fast)}
 .item:hover{background:var(--bg3);padding-left:20px}
 .item.on{background:var(--bg3);border-left-color:var(--text);padding-left:20px}
@@ -116,7 +116,7 @@ header h1 .logo-mark .eye{fill:var(--bg2)}
 .item.on .t{color:var(--text);font-weight:500}
 .item .m{font-size:10px;color:var(--muted2);font-variant-numeric:tabular-nums}
 
-/* 타입 닷 — 흑백 계조 */
+/* type dot — monochrome gradation */
 .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:transform var(--d-fast)}
 .item:hover .dot{transform:scale(1.3)}
 .d-source{background:var(--t1)}.d-entity{background:var(--t2)}.d-concept{background:var(--t3)}
@@ -124,7 +124,7 @@ header h1 .logo-mark .eye{fill:var(--bg2)}
 .d-overview{background:var(--t6)}
 .d-missing,.d-unknown{background:transparent;border:1px dashed var(--muted2)}
 
-/* 폴더 */
+/* folder */
 .folder-item{padding:7px 16px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);transition:all var(--d-fast);font-weight:600;text-transform:uppercase;letter-spacing:0.04em}
 .folder-item:hover{background:var(--bg3);color:var(--text)}
 .folder-item .arrow{font-size:9px;transition:transform var(--d-med) var(--ease);width:10px;text-align:center}
@@ -133,7 +133,7 @@ header h1 .logo-mark .eye{fill:var(--bg2)}
 .folder-children{padding-left:10px;animation:slide-down var(--d-med) var(--ease)}
 @keyframes slide-down{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 
-/* 로그 */
+/* log */
 .log-item{padding:8px 16px;font-size:12px;transition:background var(--d-fast)}
 .log-item:hover{background:var(--bg3)}
 .log-item .date{color:var(--muted2);font-family:var(--mono);font-size:10px;letter-spacing:-0.02em}
@@ -169,7 +169,7 @@ body.universe-view .side{display:none;}
 body.universe-view .side-handle{display:none;}
 body.universe-view .idx-banner{display:none;}
 
-/* ── 카테고리 드롭다운 ── */
+/* ── Category Dropdown ── */
 .cat{position:relative}
 .cat-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:transparent;border:1px solid transparent;border-radius:var(--r-md);color:var(--muted);font-size:13px;font-weight:500;transition:all var(--d-fast)}
 .cat-btn .cat-icon{font-size:11px;opacity:.7;font-family:var(--mono)}
@@ -209,7 +209,7 @@ body.universe-view .idx-banner{display:none;}
 .page-actions button:hover{color:var(--text);border-color:var(--border2);background:var(--bg3)}
 .page-actions button.danger:hover{color:var(--red);border-color:var(--red)}
 
-/* 폴더 뷰 — 연속된 페이지 */
+/* folder view — continuous pages */
 .folder-view{max-width:820px;margin:0 auto;padding:36px 44px}
 .folder-view-header{padding-bottom:20px;border-bottom:2px solid var(--border);margin-bottom:24px;display:flex;align-items:baseline;gap:12px}
 .folder-view-header h1{font-size:24px;font-weight:700;letter-spacing:-0.02em}
@@ -221,7 +221,7 @@ body.universe-view .idx-banner{display:none;}
 .folder-page-item .page-ref-link{margin-left:auto;font-family:var(--font);text-transform:none;color:var(--muted)}
 .folder-page-item .page-ref-link:hover{color:var(--text);cursor:pointer}
 
-/* 스크롤 스파이 */
+/* scroll spy */
 .scroll-spy{position:fixed;right:24px;top:120px;width:160px;max-height:60vh;overflow-y:auto;font-size:11px;display:none;z-index:10}
 .scroll-spy.show{display:block}
 .scroll-spy .sp-item{padding:4px 10px;color:var(--muted2);cursor:pointer;border-left:2px solid transparent;transition:all var(--d-fast)}
@@ -391,11 +391,11 @@ body.universe-view .idx-banner{display:none;}
 .ir-reasoning strong{color:var(--text)}
 .ir-actions{margin-top:18px;display:flex;gap:10px}
 
-/* ── Claude 캐릭터 (floating) ── */
+/* ── Claude Character (floating) ── */
 .claude-char{position:fixed;z-index:150;right:20px;bottom:20px;width:64px;height:64px;cursor:pointer;transition:transform var(--d-med) var(--ease),opacity var(--d-med);filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));user-select:none}
 .claude-char:hover{transform:scale(1.15)}
 .claude-char.hidden{opacity:0;pointer-events:none;transform:scale(0.5)}
-/* 하얀 배경에서는 inverted 필요 (다크 UI이므로 흰 테두리) */
+/* inverted needed on white background (dark UI so white border) */
 .claude-char::before{content:'';position:absolute;inset:-4px;border-radius:50%;background:radial-gradient(circle,var(--text) 0%,transparent 70%);opacity:0;transition:opacity var(--d-med)}
 .claude-char:hover::before{opacity:0.15}
 .claude-char svg{width:100%;height:100%}
@@ -403,12 +403,12 @@ body.universe-view .idx-banner{display:none;}
 .claude-char svg .eye{fill:var(--bg)!important}
 .claude-char svg .shadow{fill:var(--text)!important}
 
-/* 말풍선 힌트 */
+/* speech bubble hint */
 .claude-bubble{position:fixed;z-index:149;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-md);padding:8px 12px;font-size:12px;color:var(--text);box-shadow:var(--shadow-md);pointer-events:none;max-width:200px;opacity:0;transform:translateY(4px);transition:all var(--d-med) var(--ease)}
 .claude-bubble.show{opacity:1;transform:translateY(0)}
 .claude-bubble::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--bg2)}
 
-/* ── 챗봇 패널 ── */
+/* ── Chatbot Panel ── */
 .chat-panel{position:fixed;right:20px;bottom:20px;width:380px;max-width:calc(100vw - 40px);height:520px;max-height:calc(100vh - 40px);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);z-index:200;display:none;flex-direction:column;overflow:hidden;animation:chat-slide-in var(--d-med) var(--ease)}
 .chat-panel.open{display:flex}
 @keyframes chat-slide-in{from{opacity:0;transform:translateY(20px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -602,7 +602,7 @@ body.universe-view .idx-banner{display:none;}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px;border:2px solid var(--bg)}
 ::-webkit-scrollbar-thumb:hover{background:var(--border2)}
 
-/* ── 반응형 ── */
+/* ── Responsive ── */
 @media (max-width:900px){
   .side{width:280px}
   .side-handle{display:none}
@@ -651,13 +651,13 @@ body.universe-view .idx-banner{display:none;}
 
 <div class="toast-wrap" id="toastWrap"></div>
 
-<!-- 떠다니는 Claude 캐릭터 -->
+<!-- Floating Claude character -->
 <div class="claude-char" id="claudeChar" onclick="toggleChat()" title="Ask Claude" role="button" aria-label="Open assistant">
-  <!-- SVG는 JS에서 fetch해서 inline 삽입 (CSS에서 fill 제어 가능하게) -->
+  <!-- SVG fetched by JS and inserted inline (enables CSS fill control) -->
 </div>
 <div class="claude-bubble" id="claudeBubble"></div>
 
-<!-- 챗봇 패널 -->
+<!-- Chatbot panel -->
 <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Dashboard assistant">
   <div class="chat-header">
     <div class="ch-avatar" id="chAvatar"></div>
@@ -913,8 +913,8 @@ const I18N={
     settings_profile_none:'(none)',
     settings_intro:'Set the CLI binary, optional flag JSON, and OpenAI-compatible HTTP (API keys never leave the server). Ingest and Lint still need a tool-capable Claude CLI.',
     ingest_result_created:'created', ingest_result_modified:'modified',
-    lang_next_en:'EN', lang_next_ko:'한국어', lang_next_zh:'中文',
-    lang_current_en:'EN', lang_current_ko:'한국어', lang_current_zh:'中文',
+    lang_next_en:'EN', lang_next_zh:'中文',
+    lang_current_en:'EN', lang_current_zh:'中文',
     lang_toggle_title:'Current language: {lang}. Click to switch.',
     char_bubble_hint:'Click me to ask!',
     health_fetching:'Fetching graph insights...', health_analyzing:'✓ Data loaded — analyzing isolated pages...', health_no_isolated:'No isolated pages found — your knowledge base is healthy!', health_error_prefix:'Error: ', health_done:'Done — ', health_isolated_ready:' isolated page(s) ready for review.', health_count_label:'Analyzing ', health_btn_create:'Create Wiki Page', health_btn_skip:'Skip', health_tip:'Select a suggestion or take action below each page:',
@@ -968,224 +968,6 @@ const I18N={
     stream_collapse:'Collapse ▼', stream_still_working:'Still working...',
     model_desc_opus:'Highest quality (most powerful)', model_desc_sonnet:'Balanced quality/speed', model_desc_haiku:'Fast and economical', model_desc_default:'Use CLI default model',
     legacy_option:'(legacy — root wiki/)',
-  },
-  ko:{
-    search_placeholder:'페이지 검색...',
-    tab_tree:'트리', tab_pages:'페이지', tab_log:'로그', tab_raw:'Raw',
-    status_claude:'Claude CLI',
-    nav_page:'페이지', nav_ingest:'+ 수집', nav_query:'질문', nav_lint:'검진',
-    nav_loop:'루프',
-    nav_reflect:'성찰', nav_write:'작성', nav_compare:'비교', nav_review:'복습',
-    nav_search:'검색', nav_graph:'그래프', nav_universe:'우주', nav_history:'이력', nav_provenance:'출처',
-    nav_schedules:'스케줄',
-    nav_folder:'+ 폴더', nav_new_page:'+ 페이지', nav_guide:'? 가이드',
-    ingest_title:'새 소스 수집',
-    ingest_desc:'문서 내용을 붙여넣고 수집을 실행하면, 원본은 raw/ 폴더에 보존되고 Claude가 관련 위키 페이지를 만들어 줍니다.',
-    field_title:'제목', field_content:'내용 (Markdown)', field_folder:'저장할 폴더',
-    ingest_btn:'Claude로 수집하기', ingest_processing:'Claude가 수집 중입니다...',
-    ingest_done:'수집 완료',
-    query_title:'위키에 질문하기',
-    query_desc:'위키 근거 질문입니다. Claude CLI는 도구로 페이지를 읽고, HTTP(OpenAI 호환) 모드에서는 서버가 발췌한 스니펫과 설정 모델로 답합니다.',
-    field_question:'질문 내용', query_btn:'Claude에게 물어보기', query_processing:'관련 페이지를 찾고 있습니다...',
-    query_save_to_wiki:'이 답변을 위키에 저장', query_save_placeholder:'저장할 페이지 제목 (예: Self-Attention 분석)',
-    lint_title:'위키 건강 검진',
-    lint_desc:'페이지 간 모순, 다른 페이지에서 전혀 링크되지 않는 고아 페이지, 인용이 빠진 주장, 아직 다뤄지지 않은 빈 영역 등을 점검합니다.',
-    lint_btn:'검진 실행', lint_fix_btn:'제안된 수정 자동 반영',
-    reflect_title:'위키 성찰',
-    reflect_desc:'최근의 수집 기록·활동 로그·질문 내역을 종합해 개선할 점을 제안합니다. 주 1회 정도 실행하는 것을 권장합니다.',
-    reflect_window:'분석 범위', reflect_win_10:'최근 수집 10건', reflect_win_week:'최근 일주일', reflect_win_all:'전체 기간',
-    reflect_btn:'성찰 실행', reflect_processing:'Claude가 위키를 돌아보며 분석 중입니다... (1~3분)',
-    write_title:'글쓰기 도우미',
-    write_desc:'쌓인 위키 지식을 바탕으로 글 초안을 만들어 줍니다. 모든 사실 주장에는 인용이 자동으로 달립니다.',
-    write_topic:'주제', write_topic_ph:'예: Self-Attention이 RNN을 대체한 이유',
-    write_length:'분량', write_short:'짧게 (약 300단어)', write_medium:'보통 (약 700단어)', write_long:'길게 (약 1500단어)',
-    write_style:'스타일', write_style_blog:'블로그 글', write_style_paper:'학술 논문', write_style_explainer:'쉬운 해설',
-    write_btn:'Claude로 초안 작성', write_processing:'초안을 작성하고 있습니다... (1~2분)',
-    compare_title:'두 페이지 비교',
-    compare_desc:'비교할 두 페이지를 고르면 Claude가 공통점·차이점·시사점을 정리해 줍니다.',
-    compare_a:'페이지 A', compare_b:'페이지 B', compare_btn:'비교하기',
-    compare_processing:'두 페이지를 비교하고 있습니다... (약 1분)',
-    loop_title:'위키 유지보수 루프',
-    loop_desc:'자동화 시퀀스: 새 소스 수집 → 검진 → 수정 → 성찰 → 링크 검증.',
-    loop_run:'루프 실행',
-    loop_steps:'단계',
-    loop_step_lint:'검진',
-    loop_step_lint_fix:'자동 수정',
-    loop_step_reflect:'성찰',
-    loop_step_validate:'링크 검증',
-    loop_include_ingest:'새 소스 포함',
-    loop_continue_error:'오류 시 계속 진행',
-    loop_processing:'유지보수 루프 실행 중...',
-    loop_result_ok:'성공',
-    loop_result_failed:'실패',
-    loop_result_skipped:'건너뜀',
-    schedules_title:'스케줄된 작업',
-    schedules_desc:'cron 표현식을 사용한 정기 위키 유지보수.',
-    schedules_add:'+ 스케줄 추가',
-    schedules_name:'이름',
-    schedules_cron:'Cron',
-    schedules_cron_hint:'5 필드: 분 시 일 월 요일 (예: "0 3 * * *" = 매일 오전 3시)',
-    schedules_steps:'단계',
-    schedules_enabled:'활성화',
-    schedules_run_now:'지금 실행',
-    schedules_edit:'편집',
-    schedules_delete:'삭제',
-    schedules_none:'설정된 스케줄이 없습니다.',
-    review_title:'오래된 페이지 복습',
-    review_desc:'30일 넘게 갱신되지 않은 활성 페이지 목록입니다. Claude가 최신 관점을 반영해 업데이트할 수 있습니다.',
-    review_empty:'모든 페이지가 최근에 갱신되었습니다.',
-    review_refresh:'Claude로 최신화',
-    toolbar_llm_chip_mixed:'HTTP: {http} · 도구(CLI): {cli}',
-    toolbar_llm_chip_tools:'도구(CLI): {cli}',
-    llm_suffix_http:' · {name}',
-    llm_suffix_cli:' · {name}',
-    slides_btn:'슬라이드',
-    slides_generating:'생성 중…',
-    fix_citations_btn:'수정',
-    search_title:'스마트 검색',
-    search_desc:'TF-IDF 방식으로 위키 전체 본문을 검색합니다.',
-    search_ph:'검색어를 입력하세요...', search_btn:'검색',
-    search_no_results:'검색 결과가 없습니다.',
-    history_title:'수집 이력',
-    history_desc:'각 수집은 git 커밋으로 기록됩니다. Revert 버튼을 누르면 해당 수집이 만든 변경만 되돌릴 수 있습니다.',
-    provenance_title:'인용 커버리지',
-    provenance_desc:'각 페이지에서 주장 문장 대비 인용이 붙은 문장의 비율입니다. 소스 요약 페이지는 제외됩니다.',
-    guide_title:'사용 가이드', guide_loading:'불러오는 중...',
-    btn_edit:'편집', btn_delete:'삭제', btn_save:'저장', btn_cancel:'취소',
-    btn_approve:'확정', btn_revert:'되돌리기', btn_preview:'미리보기', btn_fix:'보완',
-    btn_create:'만들기',
-    err_title_required:'제목을 입력해 주세요.', err_content_required:'내용을 입력해 주세요.',
-    err_network:'네트워크 오류: ',
-    confirm_revert:'이 수집을 되돌리면 해당 수집이 만든 모든 변경이 취소됩니다. 계속하시겠습니까?',
-    confirm_delete:'이 페이지를 정말 삭제할까요? 삭제 후에는 복구할 수 없습니다.',
-    save_success:'저장되었습니다', save_fail:'저장 실패: ',
-    page_count:'페이지', source_count:'소스', link_count:'링크',
-    wiki_ratio_high:'위키가 주요 참고 자료로 잘 활용되고 있습니다.',
-    wiki_ratio_mid:'위키와 원본 소스를 섞어 참고하고 있어요. 위키 수집을 더 해보면 좋습니다.',
-    wiki_ratio_low:'Claude가 위키 대신 원본 소스를 주로 읽고 있어요. 수집 품질을 점검해 보세요.',
-    files_read_summary:'이 답변을 위해',
-    wiki_files:'개의 위키 파일', raw_files:'개의 원본 파일',
-    show_files:'읽은 파일 보기', reasoning:'판단 근거:',
-    created:'새로 만든 페이지', modified:'수정된 페이지',
-    new_folder:'새 폴더 만들기', folder_name:'폴더 이름', parent:'상위 폴더',
-    new_page:'새 페이지 만들기', page_type:'페이지 타입',
-    delete_confirm_title:'페이지 삭제',
-    schema_title:'CLAUDE.md', schema_desc:'이 파일이 Claude에게 위키 운영 방식을 알려주는 설계도입니다. 수정한 내용은 다음 수집·질문·검진부터 반영됩니다.',
-    wr_tip_suffix:'(최근 쿼리 {n}건 기준)',
-    confirm_revert_specific:'"{name}" 수집을 되돌리시겠습니까? 이 수집이 만든 페이지는 삭제되고, 수정한 페이지는 이전 상태로 복원됩니다.',
-    revert_fail:'되돌리기 실패: ',
-    reflect_sec_pages:'새로 만들면 좋은 페이지',
-    reflect_sec_schema:'CLAUDE.md에 추가할 규칙',
-    reflect_sec_sources:'보강이 필요한 주제의 검색어',
-    reflect_sec_contradiction:'소스 간 충돌 패턴',
-    reflect_sec_nothing:'발견 사항 없음.',
-    suggest_processing:'제안을 생성하고 있습니다...',
-    suggest_none:'제안 사항 없음. 위키가 잘 정리되어 있습니다.',
-    fix_citation_processing:'인용을 보완하고 있습니다: ',
-    graph_title:'지식 그래프 · 노드를 클릭하면 해당 페이지로 이동합니다',
-    graph_empty:'아직 페이지가 없습니다 — 수집(Ingest)을 실행하거나 wiki를 추가하세요.',
-    graph_node_title_hint:'노드 이름은 각 wiki 페이지의 제목(프론트매터 title)에서 옵니다. 위키 작성 언어를 따르며 UI 언어와 무관합니다.',
-    graph_legend_title:'유형',
-    graph_search_placeholder:'노드 검색...', graph_path_btn:'경로', graph_export_btn:'내보내기', graph_path_hint:'최단 경로를 찾으려면 두 노드를 클릭하세요', graph_path_off:'경로 모드 해제', graph_path_on:'경로 모드 — 첫 번째 노드를 클릭하세요',
-    universe_path_btn:'최단 경로',
-    universe_path_hint:'두 노드를 클릭하여 최단 경로를 찾으세요',
-    universe_path_selected:'선택: ',
-    universe_path_target:' — 이제 대상 노드를 클릭하세요',
-    universe_path_finding:'경로 탐색 중...',
-    universe_path_found:'경로 발견: ',
-    universe_path_none:'경로 없음',
-    universe_path_hops:' 홉',
-    universe_legend_title:'범례',
-    universe_legend_types:'유형',
-    universe_hover_hint:'노드에 마우스를 올리거나 클릭하세요',
-    universe_no_nodes:'우주에 노드가 없습니다',
-    universe_title:'지식 우주',
-    universe_button:'우주',
-    universe_load_failed:'우주 데이터 로드 실패',
-    universe_open_page_btn:'페이지 열기',
-    universe_merged_label:'인스턴스',
-    universe_path_panel_title:'경로',
-    universe_path_export_btn:'내보내기',
-    universe_path_reset_btn:'초기화',
-    universe_path_panel_hops:'홉',
-    universe_path_panel_cross:'프로젝트 간',
-    universe_export_path_title:'우주 경로 내보내기',
-    nav_raw:'원본(raw)', nav_settings:'AI·CLI 설정',
-    raw_loading:'불러오는 중…', raw_empty:'원본 파일이 없습니다.', raw_viewer_title:'원본 파일',
-    raw_binary_hint:'[바이너리 파일 — 미리보기 불가]', raw_sources_strip_title:'원본 파일(raw)',
-    raw_view_action:'원본 보기', raw_open:'열기',
-    settings_ai_title:'AI 공급자·CLI', settings_cli_binary:'CLI 명령', settings_cli_type:'CLI 유형', settings_cli_type_claude:'Claude Code', settings_cli_type_claw:'Claw Code', settings_cli_type_claude_ark:'Claude Code (Ark Proxy)', settings_cli_type_claw_anthropic_ark:'Claw Code (Anthropic Ark Proxy)', settings_extra_args:'추가 CLI 인자(JSON 배열)',
-    settings_ai_provider:'공급자', settings_provider_cli:'Claude CLI(도구 사용)', settings_provider_openai:'OpenAI 호환 HTTP',
-    settings_openai_url:'API 베이스 URL', settings_openai_model:'모델 ID', settings_openai_key:'API 키',
-    settings_key_placeholder:'비워 두면 기존 키 유지', settings_save_ai:'AI 설정 저장', settings_test_ai:'HTTP 연결 테스트', settings_test_e2e:'E2E 테스트', settings_test_cli:'CLI 테스트',
-    settings_preset_label:'HTTP 공급자 프리셋', settings_preset_apply:'적용', settings_preset_custom:'직접 입력',
-    settings_http_temp:'Temperature', settings_http_maxtok:'Max tokens', settings_http_maxtok_hint:'0 = 생략',
-    settings_cli_path_extra:'추가 PATH (줄당 디렉터리)', settings_cli_path_extra_hint:'자프로세스 PATH 앞에만 붙습니다.',
-    settings_quick_cli:'vendor 래퍼',
-    settings_vendor_wrap_hint:'scripts/install-memex-cli-wrappers.sh 실행(기본 ~/bin에 claude/claw 래퍼 설치). Claude → ~/.claude-*-env, Claw → ~/.claw-*-env 매핑. 아래 버튼 선택 또는 Extra PATH에 해당 디렉터리 추가.',
-    settings_profile_active:'프로파일', settings_profile_none:'(없음)',
-    settings_intro:'CLI 실행 파일·추가 인자·OpenAI 호환 HTTP를 설정합니다(API 키는 서버에만 저장). 수집·검진 등 도구 작업은 Claude CLI가 필요합니다.',
-    ingest_result_created:'생성', ingest_result_modified:'수정',
-    last_updated:'갱신일',
-    type_source:'소스', type_entity:'엔티티', type_concept:'개념',
-    type_comparison:'비교', type_analysis:'분석', type_overview:'개요',
-    type_technique:'기법', type_missing:'누락 링크', type_unknown:'알 수 없음',
-    type_api:'API', type_architecture:'아키텍처', type_configuration_guide:'설정 가이드',
-    type_deployment:'배포', type_development:'개발', type_faq:'자주 묻는 질문',
-    type_module:'모듈', type_planning:'기획', type_system:'시스템',
-    type_source_summary:'소스 요약',
-    cat_work:'작업', cat_analyze:'분석', cat_browse:'탐색', cat_create:'만들기', cat_more:'더보기',
-    lang_next_en:'EN', lang_next_ko:'한국어', lang_next_zh:'中文',
-    lang_current_en:'EN', lang_current_ko:'한국어', lang_current_zh:'中文',
-    lang_toggle_title:'현재 언어: {lang}. 클릭하면 전환합니다.',
-    char_bubble_hint:'기능이 궁금하면 클릭!',
-    health_fetching:'그래프 인사이트 가져오는 중...', health_analyzing:'✓ 데이터 로드 완료 — 고립 페이지 분석 중...', health_no_isolated:'고립된 페이지 없음 — 지식 베이스가 건강합니다!', health_error_prefix:'오류: ', health_done:'완료 — ', health_isolated_ready:' 고립 페이지 검토 준비됨.', health_count_label:'분석 중 ', health_btn_create:'Wiki 페이지 생성', health_btn_skip:'건너뛰기', health_tip:'제안 선택하거나 아래 액션 사용:',
-    chat_title:'Wiki 도우미', chat_subtitle:'Wiki 작업 & 대시보드 기능 물어보기',
-    chat_placeholder:'질문 또는 "run lint"라고 입력...', chat_send:'전송',
-    chat_welcome:'안녕하세요! Wiki 작업을 실행하거나 대시보드 기능에 대해 물어보세요:',
-    chat_sugg_1:'사이드바 어떻게 닫아?', chat_sugg_2:'Ingest랑 Query 차이는?', chat_sugg_3:'lint 실행해', chat_sugg_4:'wiki loop 돌려',
-    chat_typing:'생각 중', error_colon:'오류: ',
-    chat_action_title:'작업', chat_action_summary:'요약', chat_action_suggest:'제안',
-    chat_action_suggest_btn:'시도:', chat_action_done:'완료',
-    chat_action_lint:'검사 완료', chat_action_lint_fix:'자동 수정 적용됨',
-    chat_action_reflect:'성찰 완료', chat_action_validate:'링크 검사',
-    chat_action_loop:'Wiki Loop 완료', chat_action_detect_sources:'소스 스캔',
-    chat_action_schedule_help:'스케줄링', chat_action_loading:'실행 중...',
-    obsidian_off:'off', obsidian_on_no_config:'on · config 없음', obsidian_on_vault_not_reg:'on · vault 미등록',
-    obsidian_on_vault_line:'on · vault_open=', obsidian_true:'true', obsidian_false:'false',
-    obsidian_tip_off:'Obsidian 프로세스가 실행되지 않음',
-    obsidian_tip_no_config:'Obsidian 실행 중이지만 config 파일이 없음. 한 번이라도 Obsidian을 실행하세요.',
-    obsidian_tip_vault_unregistered:'이 폴더가 Obsidian에 vault로 등록되지 않음.\n프로젝트 경로: {path}\n등록된 vault: {registered}\n\n아래 Register 버튼을 누르면 자동 등록됩니다.',
-    obsidian_tip_registered_closed:'등록되어 있지만 현재 열려있지 않음. Obsidian에서 vault 전환.',
-    obsidian_tip_connected:'연결 정상',
-    btn_register:'Register',
-    toast_bad_json:'서버 응답 파싱 실패: ',
-    obsidian_toast_already:'이미 등록되어 있음 — open 플래그 활성화',
-    obsidian_toast_done:'등록 완료! Obsidian 재시작하면 vault 목록에 나타납니다.',
-    label_created:'생성: ', label_updated:'갱신: ',
-    obsidian_scaffold_prefix:'LLM Wiki 자동 세팅 ', obsidian_schema_ok_toast:'LLM Wiki 스키마 OK',
-    register_failed:'등록 실패: ',
-    ingest_large_note:'  · 큰 소스는 5~10분 걸릴 수 있어요',
-    btn_claude_diagnose:'Claude CLI 진단 실행',
-    toast_diagnosing:'Claude CLI 점검 중...', diagnose_advice_header:'권장사항:', diagnose_failed_prefix:'진단 실패: ',
-    guide_streaming:'스트리밍 중...', guide_seen_done:'가이드 (완료)', guide_label_done:'가이드 (완료)',
-    guide_btn_skip:'건너뛰기', guide_btn_restart:'다시 스트리밍',
-    ingest_result_bc:'수집 결과', ingest_no_changes:'변경 없음', tmpl_none:'(없음)',
-    folder_not_found:'폴더를 찾을 수 없음', folder_reading_cont:' · 연속 읽기',
-    pages_no:'페이지 없음', log_no_entries:'항목 없음',
-    proj_toast_title_req:'제목이 필요합니다', proj_create_fail:'생성 실패: ', proj_created:'프로젝트 생성됨: ',
-    proj_delete_fail:'삭제 실패: ', proj_trash:'휴지통으로 이동: ', proj_network:'네트워크 오류: ',
-    delete_modal_body:'이 페이지를 삭제합니다. 되돌릴 수 없습니다.',
-    modal_new_project:'새 프로젝트', modal_new_project_desc:'독립된 wiki/raw/CLAUDE.md를 가진 새 주제 프로젝트를 생성합니다.',
-    modal_proj_slug:'Slug (선택)', modal_proj_slug_ph:'자동 생성됨 (영숫자+하이픈)', modal_desc:'Description', modal_desc_ph:'이 프로젝트의 목적',
-    modal_template:'Template', modal_folders_label:'권장 폴더 (자동 생성)', modal_loading:'loading...',
-    modal_delete_project:'프로젝트 삭제', modal_delete_project_desc:'프로젝트를 projects/.trash/로 이동합니다. 파일은 보존되며 수동으로 복원 가능합니다.',
-    char_title:'도우미 열기', header_toggle_side:'사이드바 토글 (Cmd/Ctrl+B)', header_project:'프로젝트 (Cmd/Ctrl+P)',
-    header_new_project:'새 프로젝트', header_delete_project:'프로젝트 삭제', header_claude_model:'Claude 모델',
-    opt_template_generic:'generic (기본)',
-    wiki_root:'wiki/ (root)',
-    model_desc_opus:'최고 품질 (가장 강력)', model_desc_sonnet:'균형잡힌 품질/속도', model_desc_haiku:'빠르고 경제적', model_desc_default:'CLI 기본 모델 사용',
-    legacy_option:'(legacy — 루트 wiki/)',
   },
   zh:{
     search_placeholder:'搜索页面…', tab_tree:'目录', tab_pages:'页面', tab_log:'日志', tab_raw:'Raw',
@@ -1317,8 +1099,8 @@ const I18N={
     settings_profile_active:'命名配置', settings_profile_none:'（无）',
     settings_intro:'配置 CLI 命令、可选参数 JSON、以及 OpenAI 兼容 HTTP（密钥仅保存在服务端）。收录与检查等仍需支持工具的 Claude CLI。',
     ingest_result_created:'新建', ingest_result_modified:'修改',
-    lang_next_en:'EN', lang_next_ko:'한국어', lang_next_zh:'中文',
-    lang_current_en:'EN', lang_current_ko:'한국어', lang_current_zh:'中文',
+    lang_next_en:'EN', lang_next_zh:'中文',
+    lang_current_en:'EN', lang_current_zh:'中文',
     lang_toggle_title:'当前语言：{lang}。点击切换。',
     char_bubble_hint:'有问题就点我！',
     health_fetching:'正在获取图谱分析数据...', health_analyzing:'✓ 数据加载完成 — 正在分析孤立页面...', health_no_isolated:'未发现孤立页面 — 知识库健康！', health_error_prefix:'错误：', health_done:'完成 — ', health_isolated_ready:' 个孤立页面可审查。', health_count_label:'分析中 ', health_btn_create:'创建 Wiki 页面', health_btn_skip:'跳过', health_tip:'为每个页面选择建议或执行操作：',
@@ -1364,7 +1146,7 @@ if(!I18N[LANG]){
 function htmlLang(){return LANG==='zh'?'zh-Hans':LANG;}
 function t(k){return (I18N[LANG]&&I18N[LANG][k])||(I18N.en[k])||k;}
 function getModelDesc(id){var k=id.startsWith('claude-')?id.slice(7):'default';if(k.indexOf('-')>=0)k=k.slice(0,k.indexOf('-'));return t('model_desc_'+k);}
-function nextLangCode(){if(LANG==='en')return'ko';if(LANG==='ko')return'zh';return'en';}
+function nextLangCode(){if(LANG==='en')return'zh';return'en';}
 function applyI18n(){
   document.documentElement.setAttribute('lang',htmlLang());
   document.querySelectorAll('[data-i18n]').forEach(function(el){
@@ -1432,8 +1214,8 @@ function applySidebar(){
   var app=document.getElementById('app');
   var hidden=localStorage.getItem(SIDE_HIDDEN_KEY)==='1';
   app.classList.toggle('side-hidden',hidden);
-  // --side-w는 항상 사용자 드래그 폭(또는 기본 280). .app.side-hidden .side{width:0}
-  // 규칙이 숨김 처리를 담당하므로 여기서는 값만 기록하면 됨.
+  // --side-w always holds user-dragged width (or default 280). .app.side-hidden .side{width:0}
+  // the CSS rule handles hiding; here we just record the value.
   var w=parseInt(localStorage.getItem(SIDE_W_KEY))||280;
   w=Math.max(220,Math.min(500,w));
   app.style.setProperty('--side-w',w+'px');
@@ -1450,7 +1232,7 @@ function initSidebarResize(){
   var app=document.getElementById('app');
   var dragging=false;
   handle.addEventListener('mousedown',function(e){
-    // 사이드바가 숨겨진 상태에서는 드래그 비활성
+    // disable drag when sidebar is hidden
     if(app.classList.contains('side-hidden'))return;
     dragging=true;handle.classList.add('dragging');document.body.style.cursor='ew-resize';document.body.style.userSelect='none';
     e.preventDefault();
@@ -1468,18 +1250,18 @@ function initSidebarResize(){
     localStorage.setItem(SIDE_W_KEY,w);
   });
 }
-// 키보드 단축키: Cmd/Ctrl+B — 사이드바 토글
+// Keyboard shortcut: Cmd/Ctrl+B — toggle sidebar
 document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='b'){
     e.preventDefault();toggleSidebar();
   }
 });
 
-// ─── 프로젝트 + 모델 설정 ───
+// ─── Project + Model Settings ───
 var PROJECTS=[], CURRENT_PROJECT=null, MODELS=[], CURRENT_MODEL='default';
 
-// 모든 /api/ 호출에 현재 프로젝트 자동 주입 (기존 fetch 호출 수정 없이 통과)
-// 단, /api/projects/* (프로젝트 CRUD 자체)는 우회.
+// Auto-inject current project into all /api/ calls (passes through without modifying existing fetch calls)
+// except /api/projects/* (project CRUD itself) bypasses.
 const _origFetch = window.fetch.bind(window);
 window.fetch = function(url, opts){
   opts = opts || {};
@@ -1533,7 +1315,7 @@ async function loadProjects(){
         });
       }
     }catch(e){}
-    // 삭제 버튼은 프로젝트 선택됐을 때만 노출
+    // show delete button only when a project is selected
     var del = document.getElementById('projDeleteBtn');
     if (del) del.style.display = CURRENT_PROJECT ? '' : 'none';
   }catch(e){}
@@ -1555,7 +1337,7 @@ async function onProjectChange(){
   }
   var del = document.getElementById('projDeleteBtn');
   if (del) del.style.display = CURRENT_PROJECT ? '' : 'none';
-  // 전체 뷰 리로드
+  // full view reload
   await Promise.all([loadWiki(), loadFolders(), loadSettings(), loadIndexStatus(), loadWikiRatio()]);
   render();
   toast('Project: '+(slug||'(legacy)'), 'ok');
@@ -1633,7 +1415,7 @@ async function confirmDeleteProject(){
     toast(t('proj_trash')+d.moved_to,'ok');
     CURRENT_PROJECT = null;
     await loadProjects();
-    // 삭제 후: 다른 active 프로젝트가 있으면 그쪽으로, 없으면 legacy
+    // after delete: switch to another active project if any, else legacy
     var fresh = await _origFetch('/api/projects').then(function(r){return r.json();});
     CURRENT_PROJECT = fresh.active || null;
     var sel = document.getElementById('projectSelect');
@@ -1752,7 +1534,7 @@ async function onModelChange(){
   }catch(e){toast(t('err_network')+e.message,'err');}
 }
 
-// Cmd/Ctrl+P → 프로젝트 선택기 포커스
+// Cmd/Ctrl+P → focus project selector
 document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='p'){
     e.preventDefault();
@@ -1780,13 +1562,13 @@ marked.setOptions({renderer});
 // ─── Init ───
 async function init(){
   applyI18n();applySidebar();initSidebarResize();renderToolbar();
-  // 프로젝트 먼저 로드 → CURRENT_PROJECT 설정 후 나머지 fetch가 자동으로 스코프
+  // load projects first → set CURRENT_PROJECT then remaining fetches auto-scope
   await loadProjects();
   await Promise.all([loadWiki(),loadFolders(),checkStatus(),loadSettings()]);
   render();
   setInterval(checkStatus,15000);setInterval(pollChanges,5000);checkReflectStatus();
   initClaudeCharacter();
-  // URL hash 라우팅 — ?#view=ingest 등으로 특정 뷰 직접 진입 (스크린샷용)
+  // URL hash routing — direct view entry via ?#view=ingest etc. (for screenshots)
   handleHashRoute();
   window.addEventListener('hashchange',handleHashRoute);
 }
@@ -1815,14 +1597,14 @@ function handleHashRoute(){
   if(params.chat==='1')setTimeout(function(){var p=document.getElementById('chatPanel');if(p&&!p.classList.contains('open'))toggleChat();},300);
 }
 
-// ─── Claude 캐릭터 + 챗봇 ───
+// ─── Claude Character + Chatbot ───
 var chatHistory=[];
 var CHAT_PROJECT_SLUG='';
 var charPos={x:window.innerWidth-100,y:window.innerHeight-120};
 var charMoveInterval=null;
 
 async function initClaudeCharacter(){
-  // SVG inline 삽입 (CSS의 fill 오버라이드가 작동하려면 inline 필요)
+  // SVG inline insertion (must be inline for CSS fill overrides to work)
   try{
     var r=await fetch('claude_character.svg');
     var svg=await r.text();
@@ -1830,12 +1612,12 @@ async function initClaudeCharacter(){
     document.getElementById('chAvatar').innerHTML=svg;
   }catch(e){console.warn('Character SVG load failed',e);}
 
-  // 최초 위치
+  // initial position
   positionCharacter(charPos.x,charPos.y);
 
-  // 주기적 이동 비활성화 — 우하단 고정
+  // periodic movement disabled — fixed at bottom-right
 
-  // 첫 방문자에겐 말풍선 힌트 (localStorage)
+  // speech bubble hint for first-time visitors (localStorage)
   if(!localStorage.getItem('char_seen')){
     setTimeout(function(){showBubbleHint();},2000);
   }
@@ -1856,9 +1638,9 @@ function positionCharacter(x,y){
 }
 
 function wanderCharacter(){
-  // 챗 열려있으면 이동 안 함
+  // do not move while chat is open
   if(document.getElementById('chatPanel').classList.contains('open'))return;
-  // 사이드바 영역 피하기
+  // avoid sidebar area
   var sideW=document.getElementById('app').classList.contains('side-hidden')?0:(parseInt(getComputedStyle(document.getElementById('app')).getPropertyValue('--side-w'))||280);
   var minX=sideW+20;
   var maxX=window.innerWidth-100;
@@ -1895,16 +1677,6 @@ var CLAUDE_BUBBLES_EN=[
   "Your knowledge base grows every day!",
   "New pages wait to be linked...",
 ];
-var CLAUDE_BUBBLES_KO=[
-  "클릭해서 물어봐요!",
-  "고립된 페이지가 있어요… 연결해볼까요?",
-  "그래프가 오늘 엄청 붐비네요!",
-  "대시보드 기능에 대해 물어보세요!",
-  "스크롤 휠로 그래프를 확대해 보세요!",
-  "알트+드래그로 캔버스를 이동할 수 있어요.",
-  "지식 베이스가 매일 자라나요!",
-  "연결되지 않은 새 페이지들이 기다리고 있어요.",
-];
 var CLAUDE_BUBBLES_ZH=[
   "点击我问！",
   "发现孤立页面……要修复吗？",
@@ -1918,8 +1690,7 @@ var CLAUDE_BUBBLES_ZH=[
 
 function _getBubbleText(){
   var bubbles;
-  if(LANG==='ko')bubbles=CLAUDE_BUBBLES_KO;
-  else if(LANG==='zh')bubbles=CLAUDE_BUBBLES_ZH;
+  if(LANG==='zh')bubbles=CLAUDE_BUBBLES_ZH;
   else bubbles=CLAUDE_BUBBLES_EN;
   var dayOfYear=Math.floor(Date.now()/86400000);
   return bubbles[dayOfYear%bubbles.length];
@@ -1967,18 +1738,18 @@ function showBubbleHint(){
   setTimeout(function(){bubble.classList.remove('show');},4000);
 }
 
-// 창 크기 변경 대응
+// handle window resize
 window.addEventListener('resize',function(){
   positionCharacter(charPos.x,charPos.y);
 });
 
-// 드래그 이동
+// drag movement
 (function(){
   var dragging=false,dx=0,dy=0;
   document.addEventListener('mousedown',function(e){
     var c=e.target.closest('#claudeChar');
     if(!c)return;
-    // 즉시 드래그 시작 — 단, 이동이 없으면 클릭으로 간주
+    // start drag immediately — but treat as click if no movement
     var startX=e.clientX,startY=e.clientY;
     dx=e.clientX-charPos.x;dy=e.clientY-charPos.y;
     var moved=false;
@@ -2155,7 +1926,7 @@ async function checkStatus(){
     var r=await fetch('/api/status');var s=await r.json();
     // Claude
     setDot('dotClaude','lblClaude',s.claude.connected,s.claude.connected?s.claude.version:'');
-    // Obsidian: 프로세스가 꺼졌으면 vault 정보는 stale이므로 표시 안 함
+    // Obsidian: if process is off, vault info is stale, so do not show
     var o=s.obsidian||{};
     var label='';
     var tip='';
@@ -2184,7 +1955,7 @@ async function checkStatus(){
     var lbl=document.getElementById('lblObsidian');
     if(lbl&&lbl.parentElement){
       lbl.parentElement.title=tip;
-      // Register 버튼 부착 (vault not registered일 때만)
+      // attach Register button (only when vault not registered)
       var existing=lbl.parentElement.querySelector('.status-action');
       if(existing)existing.remove();
       if(registerBtn){
@@ -2235,7 +2006,7 @@ async function registerObsidianVault(ev){
       toast(msg+' ('+d.config_path+')'+scafMsg,'ok');
       setTimeout(checkStatus,500);
     }else{
-      // 서버 에러 발생 시 자세한 정보 표시
+      // show detailed info on server error
       var errMsg=d.error||'unknown';
       if(d.endpoint)errMsg+=' [endpoint='+d.endpoint+']';
       toast(t('register_failed')+errMsg,'err');
@@ -2264,7 +2035,7 @@ async function loadIndexStatus(){
     var txt=d.page_count;
     if(d.next_threshold)txt+='/'+d.next_threshold;
     el.innerHTML=badge+' <span style="font-size:11px;color:var(--muted)">'+txt+'</span>';
-    // 배너
+    // banner
     var banner=document.getElementById('idxBanner');
     var bannerText=document.getElementById('idxBannerText');
     if(d.warning){
@@ -2295,15 +2066,15 @@ function renderSidebar(){const el=document.getElementById('slist');if(tab==='tre
 function renderTree(el){
   if(!folders){el.innerHTML='';return;}
   var h='';
-  // 루트 페이지들 (wiki/ 직속)
+  // root pages (direct children of wiki/)
   folders.pages.forEach(function(f){
     var p=D.pages.find(function(x){return x.filename===f;});if(!p)return;
     h+='<div class="item'+(cur===f?' on':'')+'" onclick="showPage(\''+f+'\')" style="padding-left:16px"><div class="dot d-'+p.type+'"></div><span class="t">'+esc(p.title)+'</span><span class="m">'+p.word_count+'w</span></div>';
   });
-  // 하위 폴더들
+  // sub-folders
   folders.children.forEach(function(c){
     var expanded=curFolder===c.path;
-    // folder-item: arrow 클릭=toggle, 이름 클릭=폴더 뷰 열기
+    // folder-item: arrow click=toggle, name click=open folder view
     h+='<div class="folder-item"><span class="arrow'+(expanded?' open':'')+'" onclick="toggleFolder(this.parentElement)">▶</span><span class="fname" onclick="showFolderView(\''+c.path+'\')" title="Open folder view">'+esc(c.name)+'/</span><span class="m">'+c.pages.length+'</span></div>';
     h+='<div class="folder-children" style="display:'+(expanded?'block':'none')+'">';
     c.pages.forEach(function(f){
@@ -2346,7 +2117,7 @@ function renderLog(el){if(!D.log.length){el.innerHTML='<div style="padding:30px;
 function onLogClick(action,title){
   if(action==='ingest'){
     var page=D.pages.find(function(p){return p.title===title;});
-    if(!page){var stem=title.toLowerCase().replace(/[^a-z0-9가-힣一-龥]+/g,'-').replace(/-$/,'');page=D.pages.find(function(p){return p.filename.replace('.md','').split('/').pop()===stem;});}
+    if(!page){var stem=title.toLowerCase().replace(/[^a-z0-9一-龥]+/g,'-').replace(/-$/,'');page=D.pages.find(function(p){return p.filename.replace('.md','').split('/').pop()===stem;});}
     if(page){showPage(page.filename);return;}
     toast('No wiki page found for "'+title+'"','info');
   }else{
@@ -2409,7 +2180,7 @@ function graphTypeLabel(tp){
 }
 function setView(v){view=v;editing=false;renderToolbar();}
 
-// ─── Folder view (연속된 페이지) ───
+// ─── Folder view (continuous pages) ───
 function showFolderView(folderPath){
   curFolder=folderPath;cur=null;setView('page');
   if(!folders||!D){return;}
@@ -2417,10 +2188,10 @@ function showFolderView(folderPath){
   if(!folder){document.getElementById('content').innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">'+esc(t('folder_not_found'))+'</div>';return;}
   // breadcrumb
   document.getElementById('bc').innerHTML='<b>📁 '+esc(folder.name)+'/</b> · '+folder.pages.length+' '+t('page_count');
-  // 본문 렌더
+  // render body
   var pages=folder.pages.map(function(fn){return D.pages.find(function(p){return p.filename===fn;});}).filter(Boolean);
-  // 제목순 정렬
-  var _sortLoc=(LANG==='zh')?'zh-Hans':(LANG==='ko'?'ko':undefined);
+  // sort by title
+  var _sortLoc=(LANG==='zh')?'zh-Hans':undefined;
   pages.sort(function(a,b){return a.title.localeCompare(b.title,_sortLoc,{numeric:true});});
   var h='<div class="folder-view">';
   h+='<div class="folder-view-header">';
@@ -2428,16 +2199,20 @@ function showFolderView(folderPath){
   h+='<span class="meta">'+pages.length+' '+t('page_count')+t('folder_reading_cont')+'</span>';
   h+='</div>';
   pages.forEach(function(p){
+    // IMPORTANT: extract footnote defs BEFORE wikilink conversion
+    var citeMap={},citeN=0, citeTarget={};
+    var citeDefRe=/^\[\^(src-[^\]]+)\]:\s*\[\[([^\]]+)\]\]/gm;
+    p.content.replace(citeDefRe,function(m,slug,target){citeTarget[slug]=target+'.md';return m;});
     var body=p.content.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'[$2]($1.md)').replace(/\[\[([^\]]+)\]\]/g,'[$1]($1.md)');
-    var citeMap={},citeN=0;
-    body=body.replace(/\[\^(src-[a-z0-9-]+)\](?!:)/g,function(m,slug){if(!citeMap[slug])citeMap[slug]=++citeN;return '%%CITE:'+slug+'%%';});
-    body=body.replace(/^\[\^src-[a-z0-9-]+\]:.*$/gm,'');
+    body=body.replace(/\[\^(src-[^\]]+)\](?!:)/g,function(m,slug){if(!citeMap[slug])citeMap[slug]=++citeN;return '%%CITE:'+slug+'%%';});
+    body=body.replace(/^\[\^src-[^\]]+\]:.*$/gm,'');
     var html=marked.parse(body);
-    html=html.replace(/%%CITE:([a-z0-9-]+)%%/g,function(m,slug){
-      var n=citeMap[slug]||'?';var srcPage='source-'+slug.replace('src-','');
-      var srcData=D.pages.find(function(pp){return pp.filename===srcPage+'.md';});
+    html=html.replace(/%%CITE:([^\]]+?)%%/g,function(m,slug){
+      var n=citeMap[slug]||'?';var srcPage=citeTarget[slug]||('source-'+slug.replace('src-','')+'.md');
+      var srcData=D.pages.find(function(pp){return pp.filename===srcPage;});
+      if(!srcData){var baseStem=srcPage.replace('.md','').split('/').pop();srcData=D.pages.find(function(pp){return pp.filename.replace('.md','').split('/').pop()===baseStem;});}
       var tipText=srcData?srcData.title:srcPage;
-      return '<span class="cite-badge" onclick="showPage(\''+srcPage+'.md\')">'+n+'<span class="cite-tip">'+esc(tipText)+'</span></span>';
+      return '<span class="cite-badge" onclick="showPage(\''+srcPage+'\')">'+n+'<span class="cite-tip">'+esc(tipText)+'</span></span>';
     });
     var anchor='fp-'+p.filename.replace(/[^a-z0-9]/g,'-');
     h+='<div class="folder-page-item" id="'+anchor+'" data-page="'+p.filename+'">';
@@ -2450,7 +2225,7 @@ function showFolderView(folderPath){
     h+='</div>';
   });
   h+='</div>';
-  // 스크롤 스파이
+  // scroll spy
   var spy='<div class="scroll-spy show">';
   pages.forEach(function(p){
     var anchor='fp-'+p.filename.replace(/[^a-z0-9]/g,'-');
@@ -2458,9 +2233,9 @@ function showFolderView(folderPath){
   });
   spy+='</div>';
   document.getElementById('content').innerHTML=h+spy;
-  // wikilink 핸들러
+  // wikilink handler
   document.querySelectorAll('.folder-view .md a').forEach(function(a){var h=a.getAttribute('href');if(h&&h.endsWith('.md')&&h.indexOf('://')<0){a.onclick=function(e){e.preventDefault();showPage(h);};a.style.cursor='pointer';}});
-  // 스크롤 스파이 트래킹
+  // scroll spy tracking
   setupScrollSpy();
   renderSidebar();
 }
@@ -2513,6 +2288,15 @@ function showPage(fn){
     // Fallback: use target as-is (may 404 but link is preserved)
     return t+'.md';
   }
+  // citation [^src-*] → render-ready markers (supports CJK slugs)
+  // IMPORTANT: extract footnote definition wikilink targets BEFORE
+  // wikilink→markdown conversion, otherwise [[...]] is already gone
+  var citeMap={},citeN=0, citeTarget={};
+  var citeDefRe=/^\[\^(src-[^\]]+)\]:\s*\[\[([^\]]+)\]\]/gm;
+  p.content.replace(citeDefRe,function(m,slug,target){
+    citeTarget[slug]=target+'.md';
+    return m;
+  });
   let body=p.content.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,function(m,target,alias){
     return '['+alias+']('+_resolveLink(target)+')';
   }).replace(/\[\[([^\]]+)\]\]/g,function(m,target){
@@ -2520,22 +2304,27 @@ function showPage(fn){
     var label=target;
     return '['+label+']('+fn+')';
   });
-  // citation [^src-*] → 렌더 후 처리할 마커로 변환
-  var citeMap={},citeN=0;
-  body=body.replace(/\[\^(src-[a-z0-9-]+)\](?!:)/g,function(m,slug){
+  // Replace inline citations with markers
+  body=body.replace(/\[\^(src-[^\]]+)\](?!:)/g,function(m,slug){
     if(!citeMap[slug])citeMap[slug]=++citeN;
     return '%%CITE:'+slug+'%%';
   });
-  // citation 정의 줄 제거 (하단 footnote 줄)
-  body=body.replace(/^\[\^src-[a-z0-9-]+\]:.*$/gm,'');
+  // Remove footnote definition lines
+  body=body.replace(/^\[\^src-[^\]]+\]:.*$/gm,'');
   var html=marked.parse(body);
-  // 마커 → 배지 HTML
-  html=html.replace(/%%CITE:([a-z0-9-]+)%%/g,function(m,slug){
+  // Convert markers to badge HTML
+  html=html.replace(/%%CITE:([^\]]+?)%%/g,function(m,slug){
     var n=citeMap[slug]||'?';
-    var srcPage='source-'+slug.replace('src-','');
-    var srcData=D.pages.find(function(pp){return pp.filename===srcPage+'.md';});
+    // Use definition wikilink target if available, fall back to convention
+    var srcPage=citeTarget[slug]||('source-'+slug.replace('src-','')+'.md');
+    var srcData=D.pages.find(function(pp){return pp.filename===srcPage;});
+    if(!srcData){
+      // Try basename match (handle sources/ subfolder)
+      var baseStem=srcPage.replace('.md','').split('/').pop();
+      srcData=D.pages.find(function(pp){return pp.filename.replace('.md','').split('/').pop()===baseStem;});
+    }
     var tipText=srcData?srcData.title:srcPage;
-    return '<span class="cite-badge" onclick="showPage(\''+srcPage+'.md\')">'+n+'<span class="cite-tip">'+esc(tipText)+'</span></span>';
+    return '<span class="cite-badge" onclick="showPage(\''+srcPage+'\')">'+n+'<span class="cite-tip">'+esc(tipText)+'</span></span>';
   });
   var c=TC[p.type]||'var(--muted)';
   var tags=p.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join('');
@@ -2563,9 +2352,9 @@ function showPage(fn){
 function editPage(fn){
   editing=true;
   const p=D.pages.find(x=>x.filename===fn);if(!p)return;
-  // 원본 파일 전체를 가져와야 함 (frontmatter 포함)
+  // must fetch entire original file (with frontmatter)
   const fullContent=D.pages.find(x=>x.filename===fn);
-  // frontmatter 재구성
+  // rebuild frontmatter
   let fm=`---\ntitle: "${p.title}"\ntype: ${p.type}\ncreated: ${p.created}\nupdated: ${new Date().toISOString().slice(0,10)}\nsources:${p.sources.length?'\n'+p.sources.map(s=>'  - '+s).join('\n'):' []'}\ntags:${p.tags.length?'\n'+p.tags.map(t=>'  - '+t).join('\n'):' []'}\n---\n\n`;
   let raw=fm+p.content;
   document.getElementById('bc').innerHTML=`<b>Editing: ${esc(p.title)}</b>`;
@@ -2632,7 +2421,7 @@ async function doIngest(){
     }else{
       var errText=d.error||'Unknown error';
       var html='<div style="white-space:pre-wrap">'+esc(errText)+'</div>';
-      // timeout 또는 연결 문제일 때 진단 버튼 추가
+      // add diagnostic button on timeout or connection issues
       if(errText.toLowerCase().indexOf('timeout')>=0||errText.toLowerCase().indexOf('not found')>=0){
         html+='<div style="margin-top:12px"><button class="btn btn-outline" onclick="runClaudeDiagnose()">'+t('btn_claude_diagnose')+'</button></div>';
       }
@@ -3257,7 +3046,7 @@ async function doSearch(){
   }catch(e){res.innerHTML='<p style="color:var(--red)">'+e.message+'</p>';}
 }
 
-// ─── Related Sources Suggestion (inline에 통합) ───
+// ─── Related Sources Suggestion (integrated inline) ───
 async function doSuggestSources(){
   var res=document.getElementById('suggestResult');
   if(!res)return;
@@ -3277,14 +3066,14 @@ async function doSuggestSources(){
   }catch(e){res.className='result-box err';res.textContent=t('err_network')+e.message;}
 }
 
-// Marp Slide Export — 페이지 뷰에 버튼 추가
+// Marp Slide Export — add button to page view
 async function doSlideExport(fn){
   var btn=event.target; btn.disabled=true; btn.textContent=t('slides_generating');
   try{
     var r=await fetch('/api/slides',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:fn})});
     var d=await r.json();
     if(d.ok){
-      // 다운로드
+      // download
       var blob=new Blob([d.marp],{type:'text/markdown'});
       var url=URL.createObjectURL(blob);
       var a=document.createElement('a');
@@ -3345,7 +3134,7 @@ async function fixCitations(page){
     if(d.ok){
       res.className='result-box ok';res.innerHTML='<div class="md">'+marked.parse(d.output||'Done.')+'</div>';
       await Promise.all([loadWiki(),loadFolders()]);renderStats();renderSidebar();
-      // 테이블 갱신
+      // update table
       setTimeout(function(){showProvenance();},500);
     }else{
       res.className='result-box err';res.textContent='Error: '+d.error;
@@ -5028,7 +4817,7 @@ function collectRawRefs(p){
   var refs=[],seen={};
   function add(path,label){if(seen[path])return;seen[path]=1;refs.push({path:path,label:label||path});}
   var body=p.content||'';
-  body.replace(/\[\^src-([a-z0-9-]+)\](?!:)/gi,function(m,a){add(a+'.md','[src-'+a+']');return '';});
+  body.replace(/\[\^src-([^\]]+)\](?!:)/gi,function(m,a){add(a+'.md','[src-'+a+']');return '';});
   (p.sources||[]).forEach(function(s){
     var str=(s||'')+'';
     var m=str.match(/([a-zA-Z0-9][a-zA-Z0-9._-]*\.md)/);
@@ -5291,7 +5080,7 @@ function buildGuide(lang){
       '- **Wiki Ratio** — 最近问答里 Claude 用 wiki 取代 raw 的比例；低于 0.4 说明 wiki 还撑不起来。',
       '- **索引导航** — `flat` / `hierarchical` / `indexed`（随规模自动切）。',
       '- **模型下拉** — 选用 Claude 模型（Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / 默认）。',
-      '- **语言按钮** — 在 English / 한국어 / 中文 之间切换界面。','',
+      '- **语言按钮** — 在 English / 中文 之间切换界面。','',
       '---','',
       '## 单页操作','',
       '每篇 wiki 右上角：',
@@ -5361,144 +5150,6 @@ function buildGuide(lang){
       '- **定时任务**适合设成每晚凌晨自动 lint + reflect。',
     ].join('\n');
   }
-  if(lang==='ko'){
-    return [
-      '# Memex','',
-      '> 스스로 쓰이는 개인 지식 베이스.',
-      '> Obsidian에서 읽고, Claude Code가 쓰고, 대시보드로 제어합니다.','',
-      '패턴 출처: [Karpathy의 LLM Wiki 패턴](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) · 이름 출처: [Vannevar Bush의 Memex (1945)](https://en.wikipedia.org/wiki/Memex)','',
-      '---','',
-      '## 빠른 시작 — 3단계','',
-      '1. **소스 넣기** — 기사/PDF/노트를 `raw/` 디렉토리에 넣습니다.',
-      '2. **수집 클릭** — 「수집」 버튼을 누르면 Claude가 자동으로 읽고 위키 페이지를 만듭니다.',
-      '3. **결과 확인** — 사이드바에 새 소스 요약과 개념 페이지가 나타납니다.','',
-      '---','',
-      '## 먼저 알아둘 것','',
-      '- `raw/` 는 **불변**입니다. 원본 소스만 들어가고, 4단계 보호로 Claude도 수정할 수 없습니다.',
-      '- `wiki/` 는 **Claude가 완전히 소유**합니다. 엔티티, 개념, 소스 요약, 분석 페이지가 자라납니다.',
-      '- `CLAUDE.md` 는 Claude에게 규칙을 알려주는 **스키마**입니다.',
-      '- 모든 수집은 **git 커밋**입니다. 언제든 되돌릴 수 있습니다.',
-      '- **멀티 프로젝트** — 프로젝트마다 독립된 wiki/와 설정이 있으며, 헤더에서 전환합니다.','',
-      '---','',
-      '## 상태 표시줄 (좌측 하단)','',
-      '| 표시 | 뜻 |',
-      '|------|-----|',
-      '| 🟢 **Claude CLI** | claude 명령 설치·인증 완료 |',
-      '| 🔴 **Claude CLI** | 터미널에서 `claude` 실행 확인 필요 |',
-      '| 🟢 **Obsidian** | 프로세스 실행 중 + 이 vault가 열려있음 |',
-      '| 🔴 **Obsidian** | 프로세스 꺼짐 또는 vault 닫힘 |','',
-      '좌측 하단의 값은 모두 **실제 사실(raw fact)**만 표시합니다 — 추측이나 캐시된 값 없음.','',
-      '---','',
-      '## 툴바 카테고리','',
-      '17개 기능이 5개 그룹으로 묶여 있습니다. 현재 보고 있는 뷰가 속한 카테고리는 상단에 강조선으로 표시됩니다.','',
-      '### ▶ 작업 (Work)',
-      '- **수집(Ingest)** — 문서를 붙여넣으면 Claude가 위키 페이지를 만듭니다. diff + 판단 근거 + 되돌리기 포함.',
-      '- **질문(Query)** — 위키에 질문. 읽은 파일과 Wiki Ratio가 함께 표시됩니다.',
-      '- **작성(Write)** — 위키 기반 에세이 초안. 인용 자동 삽입. 주제·분량·스타일 선택.',
-      '- **비교(Compare)** — 두 페이지를 선택해 공통점·차이점·시사점 분석.',
-      '- **순환(Loop)** — 자동화 위키 유지 파이프라인: Lint / 자동 수정 / 성찰 단계를 조합 가능. 일괄 수집 포함.','',
-      '### ◉ 분석 (Analyze)',
-      '- **검진(Lint)** — 16개 항목 체크. 자동 수정 버튼.',
-      '- **성찰(Reflect)** — 주간 메타 분석. 새 페이지 제안, 스키마 개선, 부족한 소스.',
-      '- **복습(Review)** — 30일 이상 갱신 안 된 페이지를 최신 관점으로 갱신.',
-      '- **출처(Provenance)** — 페이지별 인용 커버리지. 부족한 곳 보완.','',
-      '### ◎ 탐색 (Browse)',
-      '- **검색(Search)** — TF-IDF 전문 검색.',
-      '- **그래프(Graph)** — 지식 그래프. 드래그, 클릭 이동.',
-      '- **우주(Universe)** — 프로젝트 간 지식 그래프.',
-      '- **원본(Raw)** — `raw/` 디렉토리의 원본 파일 탐색.',
-      '- **이력(History)** — git 기반 수집 이력. 원클릭 되돌리기.','',
-      '### ＋ 만들기 (Create)',
-      '- **+ 폴더** — 위키 하위 폴더.',
-      '- **+ 페이지** — 빈 페이지 (frontmatter 포함).','',
-      '### ⋯ 더보기 (More)',
-      '- **스케줄** — cron 표현식으로 정기 위키 유지(lint/reflect). 즉시 실행·활성/비활성·편집·삭제 지원.',
-      '- **설정** — 모델 선택, CLI 타입, HTTP 프리셋 등.',
-      '- **CLAUDE.md** — 스키마 확인·편집.',
-      '- **가이드** — 이 문서.','',
-      '---','',
-      '## 사이드바 / 레이아웃','',
-      '- **리사이즈** — 사이드바 우측 경계를 드래그해 220–500px 사이에서 조절.',
-      '- **접기** — 헤더 `⟷` 버튼 또는 **Cmd/Ctrl + B**.',
-      '- **폴더 연속 뷰** — 트리에서 폴더 **이름** 클릭 → 하위 페이지를 한 화면에 이어서 읽기. 우측에 스크롤 네비게이터.',
-      '- **화살표 클릭** — 펼치기/접기만 (페이지 이동 아님).','',
-      '---','',
-      '## 헤더 지표','',
-      '- **라이브 점** — 대시보드가 활성 상태임을 표시.',
-      '- **pages / sources / links** — 위키 통계.',
-      '- **Wiki Ratio** — 최근 쿼리에서 Claude가 wiki를 얼마나 참고했는지. 0.4 미만 = 위키가 raw를 대체하지 못하는 상태.',
-      '- **인덱스 배지** — `flat` / `hierarchical` / `indexed` (자동 전환).',
-      '- **모델 드롭다운** — Claude 모델 선택 (Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / Default).',
-      '- **언어 (EN / 한국어 / 中文)** — UI 언어.','',
-      '---','',
-      '## 페이지별 액션','',
-      '각 위키 페이지 우측 상단에:',
-      '- **편집** — 인라인 마크다운 에디터',
-      '- **Slides** — Marp 슬라이드 덱으로 내보내기 (.md 다운로드)',
-      '- **삭제** — 시스템 페이지가 아닌 경우에만','',
-      '---','',
-      '## CLI에서도 가능','',
-      FENCE+'bash',
-      'claude                       # 대화형',
-      'Ingest raw/some-article.md',
-      'Self-Attention이 뭐야?',
-      'Lint the wiki',
-      FENCE,'',
-      '대시보드의 모든 작업은 터미널에서도 동일하게 수행됩니다.','',
-      '---','',
-      '## MCP로 Claude에 직접 연결','',
-      '대시보드 없이 Memex를 Claude (Code / Desktop)에 **MCP 서버**로 붙여 위키를 직접 읽고/검색하고/갱신하게 만들 수 있습니다. 14개 도구가 노출됩니다 (`list_pages`, `read_page`, `search`, `add_raw_source`, `create_page`, `update_page`, `git_commit` 등).','',
-      FENCE+'bash',
-      'bash mcp-server/install.sh                 # 1회: venv + mcp 설치',
-      'claude mcp add --scope user memex \\',
-      '  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"',
-      'claude mcp list                            # 확인',
-      FENCE,'',
-      'Claude Desktop의 경우 `install.sh`가 출력하는 JSON 스니펫을 `claude_desktop_config.json`에 붙여넣고 재시작합니다. 자세한 내용은 `mcp-server/README.md`.',
-      '대시보드와 MCP는 같은 `projects.json`·`wiki/`를 공유하므로 양쪽이 즉시 동기화됩니다.','',
-      '---','',
-      '## 순환 (Loop)','',
-      '원클릭 다단계 자동 유지보수:',
-      '- **단계 선택** — 검진(Lint) / 자동 수정(Lint Fix) / 성찰(Reflect) 자유 조합.',
-      '- **수집 포함** — 체크 시 `raw/`의 새 파일을 먼저 일괄 수집한 후 유지보수 실행.',
-      '- **결과 통계** — 각 단계 소요 시간과 상태 요약.','',
-      '---','',
-      '## 스케줄 (Schedules)','',
-      '위키를 정기 자동 유지:',
-      '- **Cron 표현식** — 5필드: `분 시 일 월 요일` (예: `"0 3 * * *"` = 매일 새벽 3시).',
-      '- **설정 가능한 단계** — lint / lint_fix / reflect 선택, 수집 포함 가능.',
-      '- **관리** — 즉시 실행, 활성화/비활성화, 편집, 삭제 모두 테이블에서 가능.','',
-      '---','',
-      '## 설정 (Settings)','',
-      '- **모델 선택** — Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / 기본.',
-      '- **CLI 타입** — Claude Code, Claw 등. 커스텀 바이너리 경로 지원.',
-      '- **HTTP 프리셋** — OpenAI 호환 API 엔드포인트 설정.','',
-      '---','',
-      '## 채팅 도우미','',
-      '페이지 하단 채팅창에서 자연어로 작업 실행:',
-      '- **직접 명령** — "Lint the wiki" / "Ingest raw/foo.md" / "Reflect" 라고만 하면 실행.',
-      '- **스케줄 인식** — "매일 lint 한 번" 이라고 하면 스케줄 페이지로 안내.',
-      '- **질문** — 위키에 직접 질문, 답변에 인용 출처 표시.','',
-      '---','',
-      '## 지식이 쌓이는 방식','',
-      '1. 소스를 `raw/`에 넣거나 수집 UI에 붙여넣습니다.',
-      '2. Claude가 읽고 소스 요약 페이지 + 관련 엔티티/개념 페이지를 만듭니다.',
-      '3. 모든 사실 주장에 `[^src-*]` 인용이 붙습니다.',
-      '4. `index.md`, `log.md`, `overview.md`가 자동 갱신됩니다.',
-      '5. `ingest-reports/`에 WHY 보고서가 기록됩니다.',
-      '6. git 커밋이 남고, 언제든 되돌릴 수 있습니다.',
-      '7. 다음 소스가 들어오면 기존 지식 위에 쌓입니다.','',
-      '모순이 발견되면 CLAUDE.md의 3가지 정책(Historical / Disputed / Superseded) 중 적합한 것이 적용됩니다.','',
-      '---','',
-      '## 팁','',
-      '- 한 번에 **하나**의 소스만 수집하세요. 품질이 올라갑니다.',
-      '- **Reflect**는 주 1회 정도 권장 (대시보드가 7일 지나면 배지로 알림).',
-      '- **Provenance**에서 빨간색 페이지는 인용 부족 — Fix 버튼으로 보완.',
-      '- **Write**로 만든 초안은 위키에 저장 → 새 분석 페이지가 됩니다.',
-      '- Obsidian을 함께 켜두면 그래프 뷰에서 **실시간 반영**을 볼 수 있습니다.',
-      '- **스케줄**을 활용해 매일 새벽 자동 lint + reflect를 설정하세요.',
-    ].join('\n');
-  }
   return [
     '# Memex','',
     '> A personal knowledge base that writes itself.',
@@ -5566,7 +5217,7 @@ function buildGuide(lang){
     '- **Wiki Ratio** — how often Claude reached into the wiki vs raw on recent queries. Below 0.4 means the wiki isn\'t replacing raw.',
     '- **Index badge** — `flat` / `hierarchical` / `indexed` (auto-switches with size).',
     '- **Model dropdown** — Claude model (Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / Default).',
-    '- **Language (EN / 한국어 / 中文)** — UI language.','',
+    '- **Language (EN / 中文)** — UI language.','',
     '---','',
     '## Per-page actions','',
     'Top-right of each wiki page:',
@@ -5637,7 +5288,7 @@ function buildGuide(lang){
   ].join('\n');
 }
 
-// 스트리밍 상태
+// streaming state
 var streamingState=null;
 
 function showGuide(){
@@ -5757,7 +5408,7 @@ async function doCreatePage(){
   if(d.filename)showPage(d.filename);
 }
 
-// ─── 툴바 카테고리 ───
+// ─── Toolbar Categories ───
 var CATEGORIES=[
   {id:'work',icon:'▶',i18n:'cat_work',items:[
     {v:'ingest',icon:'＋',i18n:'nav_ingest',sub:'I'},
@@ -5842,7 +5493,7 @@ function toggleCat(id){
 function closeCats(){
   document.querySelectorAll('.cat').forEach(function(el){el.classList.remove('open');});
 }
-// 외부 클릭 시 드롭다운 닫기
+// close dropdown on outside click
 document.addEventListener('click',function(e){
   if(!e.target.closest('.cat'))closeCats();
 });
@@ -6427,7 +6078,7 @@ document.querySelectorAll('.modal-bg').forEach(m=>m.onclick=e=>{if(e.target===m)
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals();});
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
-// 안전한 fetch → JSON. 빈 응답/HTML 응답도 처리.
+// safe fetch → JSON. handles empty/HTML responses too.
 async function fetchJson(url,options){
   var r=await fetch(url,options);
   var text=await r.text();

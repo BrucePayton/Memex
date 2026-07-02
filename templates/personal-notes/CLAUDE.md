@@ -1,24 +1,31 @@
 # Wiki Template — Personal Notes
 
-> 개인 메모·일지·학습 노트용.
+> For personal notes, journals, and learning logs.
 
-## 프로젝트 맥락
+## Topic
 
-- **주제**: 개인 노트
-- **목적**: 일기·학습 메모·인사이트 축적
-- **주 언어**: ko
+{{TOPIC}}
 
-## 권장 wiki/ 구조
+## Purpose
 
-```
-wiki/
-  daily/          # 날짜별 (YYYY-MM-DD.md)
-  topics/         # 주제별 장기 메모
-  people/         # 사람
-  projects/       # 개인 프로젝트 기록
-```
+{{PURPOSE}}
 
-## 특이 사항
+## Behavior
 
-- Citation 의무는 완화 (source가 "나"인 경우가 많음)
-- 대신 `confidence: low` 기본값 권장 — 추후 외부 소스로 보강 시 갱신
+- Keep summaries concise but complete.
+- Link to source materials when available.
+- Review and update periodically (suggested: monthly).
+- Tag notes by theme for easy retrieval.
+
+## Recommended wiki folders
+
+- `wiki/notes/` — general notes and observations
+- `wiki/journal/` — dated journal entries
+- `wiki/learning/` — learning logs and study notes
+- `wiki/ideas/` — idea incubator
+
+## Key policies
+
+1. Personal reflections go in body; factual claims still need citations.
+2. Date-stamp all entries for timeline tracking.
+3. Use `confidence: low` for speculative personal observations.

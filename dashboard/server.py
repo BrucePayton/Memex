@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 LLM Wiki Dashboard Server
-- 대시보드 HTML 서빙
-- Claude CLI / Obsidian 연결 상태 확인
-- Ingest, Query, Lint, 폴더/페이지 CRUD API
-- 의존성 없음 (Python 3.10+ stdlib only)
+- Dashboard HTML serving
+- Claude CLI / Obsidian connection status check
+- Ingest, Query, Lint, folder/page CRUD API
+- No dependencies (Python 3.10+ stdlib only)
 """
 
 import json, os, re, select, shutil, ssl, subprocess, sys, time, threading, urllib.error, urllib.parse, urllib.request
@@ -34,15 +34,15 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 WIKI_DIR = PROJECT_ROOT / "wiki"
 RAW_DIR = PROJECT_ROOT / "raw"
 
-# 환경변수로 조정 가능. 기본 600초(10분) — Ingest는 페이지 10+개 생성 시 오래 걸림.
+# Configurable via env var. Default 600s (10 min) — Ingest can take long when generating 10+ pages.
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "600"))
 CLAUDE_TOOLS = os.environ.get("CLAUDE_TOOLS", "Edit,Write,Read,Glob,Grep")
-# 짧은 진단용 timeout
+# Short diagnostic timeout
 CLAUDE_QUICK_TIMEOUT = int(os.environ.get("CLAUDE_QUICK_TIMEOUT", "30"))
 # Stream heartbeat interval (seconds)
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))
 
-# ─── 런타임 설정 (모델 등) ───
+# --- Runtime settings (model etc.) ---
 
 SETTINGS_FILE = PROJECT_ROOT / ".dashboard-settings.json"
 
@@ -252,34 +252,34 @@ RAW_ABS = os.path.abspath(str(RAW_DIR))
 
 
 def _resolve_project_body(body):
-    """POST body에서 project slug 추출 → Project. 미지 slug는 KeyError."""
+    """Extract project slug from POST body -> Project. Unknown slug raises KeyError."""
     slug = (body.get("project") or "").strip() or None
     return project_registry.get_project(slug)
 
 
-# ─── slug 생성 (한글/유니코드 지원) ───
+# --- slug generation (unicode support) ---
 
 # make_slug, parse_fm, extract_links, FRONTMATTER_RE, WIKILINK_RE now imported from dashboard.models
 
 
-# ─── raw/ 보호 ───
+# --- raw/ protection ---
 
 def assert_writable(path):
-    """raw/ 디렉토리 쓰기 차단. 레거시 raw + 모든 projects/<slug>/raw/ 불변."""
+    """Block writes to raw/ directory. Legacy raw + all projects/<slug>/raw/ are immutable."""
     if project_registry.is_protected_raw(path):
         raise PermissionError(f"raw/ is immutable: {path}")
 
 
 def assert_raw_create_only(path):
-    """어떤 raw/ 안에 새 파일 생성만 허용 (기존 파일 수정/덮어쓰기 금지)."""
+    """Only allow new file creation inside any raw/ (no modification/overwrite of existing files)."""
     if not project_registry.is_protected_raw(path):
-        return  # raw/ 밖이면 패스
+        return  # outside raw/, skip
     if os.path.exists(str(path)):
         raise PermissionError(f"raw/ file already exists (immutable): {path}")
 
 
 def dedupe_raw_path(raw_path: Path) -> Path:
-    """raw/에 동일 파일명 있으면 -2, -3 등으로 자동 변경."""
+    """If same filename exists in raw/, auto-rename with -2, -3, etc."""
     if not raw_path.exists():
         return raw_path
     stem = raw_path.stem
@@ -294,7 +294,7 @@ def dedupe_raw_path(raw_path: Path) -> Path:
 
 
 def _snapshot_raw():
-    """raw/ 파일 해시 스냅샷 (변경 감지용)"""
+    """raw/ file hash snapshot (for change detection)"""
     snap = {}
     for f in RAW_DIR.rglob("*"):
         if f.is_file() and not f.name.startswith("."):
@@ -306,7 +306,7 @@ _raw_snapshot_at_start = _snapshot_raw()
 
 
 def check_raw_integrity():
-    """raw/ 변경 감지 → 변경된 파일 리스트 반환"""
+    """raw/ change detection -> return list of changed files"""
     current = _snapshot_raw()
     modified = []
     for path, mtime in _raw_snapshot_at_start.items():
@@ -321,7 +321,7 @@ def check_raw_integrity():
 class GitManager:
     def __init__(self):
         self.root = str(PROJECT_ROOT)
-        # git repo가 아니면 초기화
+        # init if not a git repo
         if not (PROJECT_ROOT / ".git").is_dir():
             self._run("init")
             self._run("add", "-A")
@@ -335,14 +335,14 @@ class GitManager:
         return r
 
     def _stage_all(self, project=None):
-        """프로젝트 범위 변경사항 스테이징 (legacy면 루트 wiki/raw/ingest-reports)."""
+        """Stage project-scoped changes (if legacy, root wiki/raw/ingest-reports)."""
         if project and not project.is_legacy:
             base = str(project.root.relative_to(PROJECT_ROOT))
             for sub in ("wiki", "raw", "ingest-reports", "reflect-reports", ".settings.json", "query-log.jsonl", "CLAUDE.md"):
                 p = project.root / sub
                 if p.exists():
                     self._run("add", f"{base}/{sub}")
-            # 레지스트리 변경도 함께
+            # include registry changes too
             if REGISTRY_FILE.exists():
                 self._run("add", "projects.json")
         else:
@@ -356,7 +356,7 @@ class GitManager:
         return ""
 
     def commit_ingest(self, source_name, project=None):
-        """ingest 완료 후 커밋. commit hash 반환."""
+        """Commit after ingest. Returns commit hash."""
         self._stage_all(project)
         status = self._run("diff", "--cached", "--name-only")
         files = [f for f in status.stdout.strip().split("\n") if f]
@@ -382,14 +382,14 @@ class GitManager:
         return log.stdout.strip()
 
     def commit_generic(self, message, project=None):
-        """임의 작업용 — message에 project prefix 자동 추가 안 함, 호출측이 선택."""
+        """For arbitrary operations — no auto project prefix in message, caller decides."""
         self._stage_all(project)
         self._run("commit", "-m", message)
         log = self._run("log", "-1", "--format=%H")
         return log.stdout.strip()
 
     def list_ingests(self, limit=50):
-        """ingest: 커밋만 추출 → [{hash, source, date, files_changed}]"""
+        """ingest: extract commits only -> [{hash, source, date, files_changed}]"""
         log = self._run(
             "log", f"--max-count={limit}", "--format=%H|%s|%aI",
             "--grep=^ingest:", "--extended-regexp",
@@ -402,7 +402,7 @@ class GitManager:
             if len(parts) < 3:
                 continue
             h, subject, date = parts
-            # 변경 파일 수
+            # changed files count
             stat = self._run("diff-tree", "--no-commit-id", "--name-only", "-r", h)
             files = [f for f in stat.stdout.strip().split("\n") if f]
             source = subject.replace("ingest: ", "", 1)
@@ -417,15 +417,15 @@ class GitManager:
         return results
 
     def revert_ingest(self, commit_hash):
-        """해당 커밋만 revert (git revert --no-edit)"""
-        # 안전: ingest 커밋인지 확인
+        """Revert only that commit (git revert --no-edit)"""
+        # safety: verify it is an ingest commit
         log = self._run("log", "-1", "--format=%s", commit_hash)
         subject = log.stdout.strip()
         if not subject.startswith("ingest:"):
             return {"ok": False, "error": f"Not an ingest commit: {subject}"}
         r = self._run("revert", "--no-edit", commit_hash)
         if r.returncode != 0:
-            # conflict 발생 시
+            # on conflict
             self._run("revert", "--abort")
             return {"ok": False, "error": f"Revert conflict: {r.stderr[:300]}"}
         new_log = self._run("log", "-1", "--format=%H|%s")
@@ -439,13 +439,13 @@ git_mgr = GitManager()
 
 
 def _timeout_hint():
-    """timeout 발생 시 사용자에게 보여줄 자세한 힌트"""
+    """Detailed hints to show user on timeout"""
     return (
-        f"Claude CLI timeout ({CLAUDE_TIMEOUT}s). 가능한 원인 + 해결:\n"
-        f"  1. Claude CLI 인증 안 됨 → 터미널에서 'claude' 직접 실행해 로그인 확인\n"
-        f"  2. 모델이 너무 무거움 → 헤더 모델 드롭다운에서 Sonnet/Haiku로 전환\n"
-        f"  3. 작업 자체가 큼 → 환경변수 CLAUDE_TIMEOUT=1200 으로 서버 재시작\n"
-        f"  4. /api/claude/diagnose 로 빠른 점검 가능"
+        f"Claude CLI timeout ({CLAUDE_TIMEOUT}s). Possible causes + solutions:\n"
+        f"  1. Claude CLI not authenticated -> run 'claude' in terminal to verify login\n"
+        f"  2. Model too heavy -> switch to Sonnet/Haiku in header model dropdown\n"
+        f"  3. Task itself is large -> restart server with env CLAUDE_TIMEOUT=1200\n"
+        f"  4. Quick check via /api/claude/diagnose"
     )
 
 
@@ -486,29 +486,29 @@ def run_claude_tracked(prompt, cwd=None, project=None):
         except json.JSONDecodeError:
             continue
 
-        # Read tool result → filePath 추출
+        # Read tool result -> extract filePath
         if evt.get("type") == "user":
             msg = evt.get("message", {})
             tur = evt.get("tool_use_result")
             if tur and isinstance(tur, dict):
                 fp = tur.get("file", {}).get("filePath", "")
                 if fp:
-                    # 프로젝트 상대경로로 변환
+                    # convert to project-relative path
                     try:
                         rel = str(Path(fp).relative_to(PROJECT_ROOT))
                     except ValueError:
                         rel = fp
                     if rel not in files_read:
                         files_read.append(rel)
-            # content 배열에서도 탐색 (tool_result)
+            # also search in content array (tool_result)
             content = msg.get("content", [])
             if isinstance(content, list):
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "tool_result":
-                        # 이건 이미 위에서 처리
+                        # this was already handled above
                         pass
 
-        # result 이벤트 → answer + usage
+        # result event -> answer + usage
         if evt.get("type") == "result":
             answer = evt.get("result", "")
             token_usage = {
@@ -1202,7 +1202,7 @@ def _log_query(question, files_read, wiki_ratio, answer_length, query_log=None):
 
 
 def _get_query_stats(n=20, query_log=None):
-    """최근 n개 쿼리의 wiki_ratio 평균"""
+    """Average wiki_ratio of last n queries"""
     target = query_log or QUERY_LOG
     if not target.exists():
         return {"avg_wiki_ratio": None, "count": 0}
@@ -1240,8 +1240,8 @@ def _normalize_ui_lang(code):
 def _resolve_project(slug=None):
     """slug → Project.
 
-    - slug가 빈값/None: active → legacy 순으로 폴백 (project_registry.get_project 기본 동작)
-    - slug가 구체적 값이지만 레지스트리에 없으면 KeyError 전파 (호출측이 404 처리)
+    - slug is empty/None: fallback active -> legacy (project_registry.get_project default behavior)
+    - slug has a specific value but not in registry: propagate KeyError (caller handles as 404)
     """
     return project_registry.get_project(slug or None)
 
@@ -1277,7 +1277,7 @@ def get_folder_tree(project_slug=None):
 
 
 def wiki_hash(project_slug=None):
-    """wiki/ 변경 감지용 간단 해시 — 파일 수 + 총 mtime"""
+    """Simple hash for wiki/ change detection — file count + total mtime"""
     proj = _resolve_project(project_slug)
     wiki_dir = proj.wiki_dir
     total = 0
@@ -2206,7 +2206,7 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
     # Group by normalized title
     title_map = _dd(list)
     for n in all_nodes:
-        key = _re.sub(r'[^a-z가-힣0-9]+', '', n["label"].lower())
+        key = _re.sub(r'[^a-z0-9]+', '', n["label"].lower())
         if len(key) > 4:
             title_map[key].append(n)
 
@@ -2528,25 +2528,25 @@ def _build_universe_graph(include_hidden: bool = False) -> dict:
 # ─── status ───
 
 def _paths_match(a: str, b: str) -> bool:
-    """두 경로가 같은지 여러 방식으로 검사. 플랫폼/심볼릭 링크/대소문자 대응."""
+    """Check if two paths are the same using multiple methods. Handles platform/symlink/case differences."""
     if not a or not b:
         return False
-    # 1. 문자열 직접 비교
+    # 1. direct string comparison
     if a == b:
         return True
-    # 2. Path.resolve() 비교 (심볼릭 링크 해석)
+    # 2. Path.resolve() comparison (symlink resolution)
     try:
         if Path(a).resolve() == Path(b).resolve():
             return True
     except Exception:
         pass
-    # 3. normpath + normcase (Windows/macOS 대소문자 무관)
+    # 3. normpath + normcase (Windows/macOS case-insensitive)
     try:
         if os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b)):
             return True
     except Exception:
         pass
-    # 4. samefile (두 경로가 같은 inode)
+    # 4. samefile (both paths same inode)
     try:
         if Path(a).samefile(Path(b)):
             return True
@@ -2556,16 +2556,16 @@ def _paths_match(a: str, b: str) -> bool:
 
 
 def _read_obsidian_facts():
-    """Obsidian으로부터 사실(fact)만 읽어서 반환. 판단/라벨 없음.
+    """Read and return only facts from Obsidian. No judgment/labels.
 
     Returns:
-        process_running: bool (pgrep Obsidian 결과)
-        config_path: str | None (발견된 Obsidian config 파일 경로)
-        vault_registered: bool (이 프로젝트가 vault로 등록됨)
-        vault_open: bool | None (등록된 vault의 open 플래그. 등록 안됐으면 None)
-        vault_last_ts: int | None (마지막 접근 timestamp in ms)
-        project_path: str (디버깅용 — 현재 프로젝트 절대경로)
-        registered_vaults: list[str] (디버깅용 — obsidian.json의 모든 vault 경로)
+        process_running: bool (pgrep Obsidian result)
+        config_path: str | None (discovered Obsidian config file path)
+        vault_registered: bool (this project is registered as a vault)
+        vault_open: bool | None (open flag of registered vault. None if not registered)
+        vault_last_ts: int | None (last access timestamp in ms)
+        project_path: str (for debugging - current project absolute path)
+        registered_vaults: list[str] (for debugging - all vault paths in obsidian.json)
     """
     facts = {
         "process_running": False,
@@ -2577,7 +2577,7 @@ def _read_obsidian_facts():
         "registered_vaults": [],
     }
 
-    # 프로세스 — macOS/Linux(pgrep), Windows(tasklist) 모두 지원
+    # process — supports macOS/Linux(pgrep), Windows(tasklist)
     try:
         if sys.platform == "win32":
             r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq Obsidian.exe"],
@@ -2589,14 +2589,14 @@ def _read_obsidian_facts():
     except Exception:
         pass
 
-    # config 찾기 — 여러 OS 경로 지원
+    # find config — supports multiple OS paths
     home = Path.home()
     candidates = [
         home / "Library/Application Support/obsidian/obsidian.json",  # macOS
         home / ".config/obsidian/obsidian.json",                       # Linux
         home / ".var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json",  # Flatpak
         home / "AppData/Roaming/obsidian/obsidian.json",               # Windows
-        home / "AppData/Roaming/Obsidian/obsidian.json",               # Windows (대문자)
+        home / "AppData/Roaming/Obsidian/obsidian.json",               # Windows (uppercase)
     ]
     for p in candidates:
         if p.exists():
@@ -2644,7 +2644,7 @@ def check_status():
 
 
 def diagnose_claude():
-    """Claude CLI를 빠르게 점검 — 설치, 인증, 모델 응답 시간"""
+    """Quick Claude CLI check — installation, auth, model response time"""
     env_cli = _cli_subprocess_env()
     path_preview = env_cli.get("PATH", "")[:280]
     extra_dirs = llm_provider._parse_cli_path_extra_dirs(SETTINGS)
@@ -2671,7 +2671,7 @@ def diagnose_claude():
     result["cli_binary"] = SETTINGS.get("claude_cli_binary", "claude")
     result["resolved_executable"] = exe
 
-    # 1. 버전 확인
+    # 1. version check
     try:
         r = subprocess.run(
             [exe, "--version"],
@@ -2704,7 +2704,7 @@ def diagnose_claude():
     if not result["cli_installed"]:
         return result
 
-    # 2. 짧은 prompt로 응답 시간 측정 (인증 + 모델 접근 동시 확인)
+    # 2. measure response time with short prompt (verify auth + model access)
     try:
         t0 = time.time()
         exe = llm_provider.get_cli_executable(SETTINGS)
@@ -2722,19 +2722,19 @@ def diagnose_claude():
         if r.returncode != 0:
             err = (r.stderr or "").lower()
             if "auth" in err or "login" in err or "unauthorized" in err:
-                result["advice"].append("Claude CLI 인증 필요. 터미널에서 'claude' 실행 후 로그인.")
+                result["advice"].append("Claude CLI auth required. Run 'claude' in terminal to login.")
             else:
-                result["advice"].append(f"Claude 응답 실패: {(r.stderr or '')[:200]}")
+                result["advice"].append(f"Claude response failed: {(r.stderr or '')[:200]}")
         if elapsed > 15:
-            result["advice"].append(f"응답이 느립니다 ({elapsed:.1f}s). Sonnet/Haiku로 모델 변경 권장.")
+            result["advice"].append(f"Response is slow ({elapsed:.1f}s). Consider switching to Sonnet/Haiku.")
     except subprocess.TimeoutExpired:
         result["auth_ok"] = False
-        result["error"] = f"빠른 진단도 timeout ({CLAUDE_QUICK_TIMEOUT}s)"
-        result["advice"].append("Claude CLI가 응답하지 않습니다. 터미널에서 'claude' 직접 실행해 인증/네트워크 확인.")
+        result["error"] = f"Quick diagnostic also timed out ({CLAUDE_QUICK_TIMEOUT}s)"
+        result["advice"].append("Claude CLI not responding. Run 'claude' in terminal to check auth/network.")
 
-    # 3. 무거운 모델 사용 시 권장
+    # 3. recommendation for heavy models
     if SETTINGS.get("model") == "claude-opus-4-7":
-        result["advice"].append("Opus 4.7은 가장 느립니다. Ingest처럼 큰 작업은 Sonnet 4.6 권장.")
+        result["advice"].append("Opus 4.7 is the slowest. For large tasks like Ingest, Sonnet 4.6 recommended.")
 
     return result
 
@@ -2902,17 +2902,17 @@ def _ensure_vault_scaffolding(vault_root: Path) -> dict:
 
 
 def register_obsidian_vault():
-    """현재 프로젝트 폴더를 Obsidian config에 vault로 등록.
+    """Register current project folder as a vault in Obsidian config.
 
-    obsidian.json의 vaults 딕셔너리에 이 프로젝트의 엔트리를 추가한다.
-    이미 등록되어 있으면 open 플래그만 true로 설정.
-    Obsidian이 실행 중일 수 있어 config를 덮어쓸 때는 조심스럽게.
-    또한 vault에 LLM Wiki 스키마와 Obsidian 기본 설정을 idempotent하게 보강한다.
+    Adds this project entry to the vaults dict in obsidian.json.
+    If already registered, only sets the open flag to true.
+    Obsidian may be running, so overwrite config carefully.
+    Also idempotently enhances the vault with LLM Wiki schema and Obsidian defaults.
     """
     facts = _read_obsidian_facts()
     project_path = facts["project_path"]
 
-    # config 경로 결정 (없으면 생성)
+    # determine config path (create if missing)
     home = Path.home()
     candidates = [
         home / "Library/Application Support/obsidian/obsidian.json",
@@ -2925,17 +2925,17 @@ def register_obsidian_vault():
     if config_path:
         config_path = Path(config_path)
     else:
-        # 존재하는 것 중 첫 번째. 없으면 OS 기본 경로에 생성
+        # first existing one. if none, create at OS default path
         config_path = next((p for p in candidates if p.parent.exists()), None)
         if not config_path:
-            # macOS 기본으로 디렉토리 생성 시도
+            # try creating directory at macOS default
             default = candidates[0] if sys.platform == "darwin" else (
                 candidates[3] if sys.platform == "win32" else candidates[1]
             )
             default.parent.mkdir(parents=True, exist_ok=True)
             config_path = default
 
-    # 기존 config 읽기
+    # read existing config
     cfg = {"vaults": {}}
     if config_path.exists():
         try:
@@ -2946,7 +2946,7 @@ def register_obsidian_vault():
     if "vaults" not in cfg or not isinstance(cfg["vaults"], dict):
         cfg["vaults"] = {}
 
-    # 이미 등록되어 있는지 확인
+    # check if already registered
     existing_id = None
     for vid, info in cfg["vaults"].items():
         if _paths_match(info.get("path", ""), project_path):
@@ -2955,13 +2955,13 @@ def register_obsidian_vault():
 
     import secrets
     if existing_id:
-        # open 플래그만 켜기
+        # just toggle open flag on
         cfg["vaults"][existing_id]["open"] = True
         cfg["vaults"][existing_id]["ts"] = int(time.time() * 1000)
         action = "already_registered"
     else:
-        # 신규 등록
-        vault_id = secrets.token_hex(8)  # 16자 hex
+        # new registration
+        vault_id = secrets.token_hex(8)  # 16-char hex
         cfg["vaults"][vault_id] = {
             "path": project_path,
             "ts": int(time.time() * 1000),
@@ -2974,7 +2974,7 @@ def register_obsidian_vault():
     except Exception as e:
         return {"ok": False, "error": f"config write error: {e}"}
 
-    # LLM Wiki 자동 세팅 — vault scaffolding (idempotent, non-destructive)
+    # LLM Wiki auto-setup — vault scaffolding (idempotent, non-destructive)
     try:
         scaffolding = _ensure_vault_scaffolding(Path(project_path))
     except Exception as e:
@@ -2986,14 +2986,14 @@ def register_obsidian_vault():
         "config_path": str(config_path),
         "project_path": project_path,
         "scaffolding": scaffolding,
-        "restart_hint": "Obsidian을 재시작(또는 실행)하면 vault가 목록에 나타납니다.",
+        "restart_hint": "Restart (or launch) Obsidian to see the vault in the list.",
     }
 
 
 # ─── operations ───
 
 def _snapshot_wiki(wiki_dir=None):
-    """wiki/ 전체 파일의 내용을 dict로 스냅샷"""
+    """Snapshot all wiki/ file contents as dict"""
     d = wiki_dir or WIKI_DIR
     snap = {}
     if not d.exists():
@@ -3011,17 +3011,17 @@ def _snapshot_wiki(wiki_dir=None):
 
 
 def _diff_snapshots(before, after):
-    """before/after 스냅샷 비교 → created_pages, modified_pages"""
+    """Compare before/after snapshots -> created_pages, modified_pages"""
     import difflib
     created, modified = [], []
     for path, content in after.items():
         if path not in before:
-            # 새 파일 — preview 첫 10줄
+            # new file — preview first 10 lines
             lines = content.strip().split("\n")
             preview = "\n".join(lines[:12])
             created.append({"path": path, "preview_text": preview})
         elif before[path] != content:
-            # 수정된 파일 — unified diff
+            # modified file — unified diff
             diff = difflib.unified_diff(
                 before[path].splitlines(keepends=True),
                 content.splitlines(keepends=True),
@@ -3180,7 +3180,7 @@ Question:
     else:
         ok, answer, err, files_read, token_usage = run_claude_tracked(prompt, project=proj)
 
-    # 경로가 project-relative인지 root-relative인지 다를 수 있으므로 둘 다 커버
+    # paths may be project-relative or root-relative, cover both
     def _is_wiki(f):
         return f.startswith("wiki/") or "/wiki/" in f
     def _is_raw(f):
@@ -3204,7 +3204,7 @@ Question:
 
 
 def do_query_save(title, content, project_slug=None):
-    """Query 답변을 wiki에 analysis 페이지로 저장"""
+    """Save Query answer as analysis page in wiki"""
     if not title or not title.strip():
         return {"ok": False, "error": "Title is required"}
     proj = project_registry.get_project(project_slug)
@@ -3241,7 +3241,7 @@ tags:
 
 
 def do_fix_citations(page_filename, project_slug=None):
-    """특정 페이지의 citation을 Claude에게 보완시킴"""
+    """Have Claude fix citations for a specific page"""
     proj = project_registry.get_project(project_slug)
     filepath = proj.wiki_dir / page_filename
     if not filepath.exists():
@@ -3269,7 +3269,7 @@ REFLECT_DIR.mkdir(exist_ok=True)
 
 
 def _collect_reflect_context(window, project=None):
-    """window에 따라 log 항목 + ingest-reports 텍스트 수집"""
+    """Collect log entries + ingest-reports text based on window"""
     wiki_dir = project.wiki_dir if project else WIKI_DIR
     ingest_dir = project.ingest_reports if project else (PROJECT_ROOT / "ingest-reports")
     qlog_file = project.query_log if project else QUERY_LOG
@@ -3294,7 +3294,7 @@ def _collect_reflect_context(window, project=None):
             except json.JSONDecodeError:
                 pass
 
-    # window로 범위 제한
+    # limit scope by window
     if window == "last-10-ingests":
         reports = reports[:10]
     elif window == "last-week":
@@ -3303,7 +3303,7 @@ def _collect_reflect_context(window, project=None):
         reports = [r for r in reports if r["name"][:10] >= cutoff]
 
     return {
-        "log_text": log_text[-3000:],  # 최근 3000자
+        "log_text": log_text[-3000:],  # last 3000 chars
         "reports": reports[:20],
         "low_ratio_queries": low_ratio_queries[:10],
     }
@@ -3369,7 +3369,7 @@ Include parse markers before sections: SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGG
     sections = {"suggested_pages": "", "suggested_schema": "", "suggested_sources": "", "contradiction_review": ""}
     report_file = proj.root / report_path
     report_text = report_file.read_text("utf-8") if report_file.exists() else out
-    # ## SUGGESTED_PAGES: 또는 ## Suggested Pages 형태 모두 처리
+    # handle both ## SUGGESTED_PAGES: and ## Suggested Pages formats
     section_patterns = [
         (r"##\s*(?:SUGGESTED_PAGES:?\s*)?Suggested Pages\b", "suggested_pages"),
         (r"##\s*(?:SUGGESTED_SCHEMA:?\s*)?Suggested Schema", "suggested_schema"),
@@ -3385,7 +3385,7 @@ Include parse markers before sections: SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGG
     positions.sort(key=lambda x: x[0])
     for i, (start, key) in enumerate(positions):
         end = positions[i + 1][0] if i + 1 < len(positions) else len(report_text)
-        # 끝에서 다음 ## 헤딩 찾기
+        # find next ## heading from end
         next_heading = _re.search(r"\n##\s", report_text[start:end])
         if next_heading:
             end = start + next_heading.start()
@@ -3400,7 +3400,7 @@ Include parse markers before sections: SUGGESTED_PAGES:, SUGGESTED_SCHEMA:, SUGG
 
 
 def get_last_reflect_date(project_slug=None):
-    """마지막 reflect-reports 날짜"""
+    """Date of last reflect report"""
     proj = project_registry.get_project(project_slug)
     d = proj.reflect_reports
     if not d.is_dir():
@@ -3808,7 +3808,7 @@ Output only raw Marp markdown (no explanations)."""
 # ─── Smart Search (TF-IDF) ───
 
 def _tokenize(text):
-    return re.findall(r"[\w가-힣]+", text.lower())
+    return re.findall(r"[\w]+", text.lower())
 
 
 def _tfidf_wiki_search(proj, query, top_k=10):
@@ -3907,8 +3907,8 @@ Suggestions only — no preamble."""
     return {"ok": ok, "project": proj.slug, "suggestions": suggestions, "raw": out, "error": err}
 
 
-# ─── 대시보드 도우미 챗봇 ───
-# 대시보드 자체에 대한 질문에 답변. 위키 내용이 아니라 기능/사용법.
+# --- Dashboard Assistant Chatbot ---
+# Answers questions about the dashboard itself. Not wiki content — features/usage.
 
 ASSISTANT_CONTEXT_EN = """You are "Claude", a friendly AI assistant for **Memex** — an LLM-powered personal knowledge base that continuously builds, maintains, and updates enterprise-grade wikis.
 
@@ -3920,7 +3920,7 @@ ABOUT MEMEX (this IS a special wiki platform you help manage):
 - Graph view: wikilinks form a knowledge graph. BFS community detection finds topic clusters. Isolated pages have no links — adding wikilinks improves KB health.
 - MCP server exposes wiki operations programmatically (list pages, search, create/update pages, validate/fix links).
 - Optional Graphify integration: Leiden/Louvain clustering, god-nodes filtering, surprising connections, community naming, interactive HTML export.
-- Dashboard languages: English, 한국어, 中文.
+- Dashboard languages: English, 中文.
 - Claude CLI must be installed and configured. Model selector: Opus/Sonnet/Haiku/Default.
 
 DASHBOARD FEATURES:
@@ -3931,7 +3931,7 @@ DASHBOARD FEATURES:
   * Create: + Folder, + Page
   * More: CLAUDE.md, Guide
 - Sidebar: drag right edge to resize (220-500px). Cmd/Ctrl+B to toggle. Click folder NAME (not arrow) for continuous folder view.
-- Header: language toggle (English / 한국어 / 中文), model selector (Opus/Sonnet/Haiku/Default), Wiki Ratio gauge, index strategy badge.
+- Header: language toggle (English / 中文), model selector (Opus/Sonnet/Haiku/Default), Wiki Ratio gauge, index strategy badge.
 - Status bar (bottom-left): raw facts only. Claude CLI (on/off) + Obsidian (process + vault_open).
 - Per-page: Edit, Slides (Marp export), Delete.
 - Every ingest = git commit. Revertable via History.
@@ -3943,38 +3943,6 @@ WIKI ACTIONS FROM CHAT: Users can type natural language commands like "run lint"
 If asked about dashboard usage, give direct instructions. Keep answers SHORT (2-4 sentences). For deep wiki content analysis, suggest the Query feature.
 """
 
-ASSISTANT_CONTEXT_KO = """당신은 "Claude" 캐릭터로, **Memex** — LLM 기반 개인 지식 베이스의 친근한 도우미입니다. Memex는 엔터프라이즈급 위키를 지속적으로 구축·유지·갱신합니다.
-
-MEMEX 소개 (이 시스템 관리 도움):
-- 구조: Obsidian vault — raw/(불변 원본, 4중 보호), wiki/(LLM 유지 보드), projects/(멀티프로젝트 지원).
-- 스키마: CLAUDE.md가 전체 정의 — frontmatter 규칙(type/status/confidence/source_count), 인라인 인용 [^src-*], wikilink [[page-name]], 모순 해결 정책.
-- Wiki 순환: Ingest(raw source 추가 → Claude가 wiki 페이지 생성/수정) → Query(wiki 내용 질의) → Write(草稿 작성) → Compare(비교) → Lint(인용 건강도 점검) → Reflect(패턴 분석) → Review(품질 평가).
-- Git 통합: 모든 Ingest = 자동 git commit. History에서 모든 변경 되돌리기 가능.
-- Graph 뷰: wikilink가 지식 그래프 형성. BFS 커뮤니티 감지로 주제 분류. Isolated 페이지는 링크 없음 — wikilink 추가로 KB 헬스 개선.
-- MCP 서버가 wiki 작업을 프로그래매틱으로 노출 (페이지 목록, 검색, 생성/수정, 링크 검증/수정).
-- Optional Graphify: Leiden/Louvain 클러스터링, god-nodes 필터링, surprising connections, 커뮤니티 명명, HTML 내보내기.
-- 대시보드 언어: English, 한국어, 中文.
-- Claude CLI 설치 필요. 모델 선택: Opus/Sonnet/Haiku/Default.
-
-대시보드 핵심 정보:
-- 툴바는 5개 카테고리:
-  * 작업: 수집, 질문, 작성, 비교
-  * 분석: 검진, 성찰, 복습, 출처
-  * 탐색: 검색, 그래프, 이력
-  * 만들기: + 폴더, + 페이지
-  * 더보기: CLAUDE.md, 가이드
-- 사이드바: 우측 경계 드래그로 리사이즈(220-500px). Cmd/Ctrl+B로 토글. 폴더 **이름** 클릭(화살표 아님) → 연속 폴더 뷰.
-- 헤더: 언어 토글, 모델 선택(Opus/Sonnet/Haiku/Default), Wiki Ratio 게이지, 인덱스 배지.
-- 상태 바(좌측 하단): Claude CLI + Obsidian(process + vault_open).
-- 페이지별: 편집, Slides(Marp 내보내기), 삭제.
-- 모든 수집 = git 커밋. History에서 되돌리기.
-- 인라인 인용 [^src-*]는 숫자 배지로 렌더링.
-- 적응형 인덱싱: flat(<50) → hierarchical(50-200) → indexed(>200).
-
-대화 중 Wiki 명령: "run lint", "wiki loop 돌려", "broken link 찾아", "reflect 해줘" 등 자연어로 wiki 작업을 직접 실행. 일반 질문에는 정상 답변.
-
-답변은 **짧게(2~4문장)**. 위키 심화 분석은 Query 기능 안내.
-"""
 
 ASSISTANT_CONTEXT_ZH = """你是 "Claude"，**Memex**（LLM 驱动的个人知识库平台）的友好助手。Memex 持续构建、维护、更新企业级知识库。
 
@@ -3986,13 +3954,13 @@ ASSISTANT_CONTEXT_ZH = """你是 "Claude"，**Memex**（LLM 驱动的个人知�
 - 图谱视图：wikilink 形成知识图谱。BFS 社区检测识别主题簇。孤立页面无链接 — 添加 wikilink 可提升知识库健康度。
 - MCP Server 程序化暴露 wiki 操作（列出页面、搜索、创建/更新、链接验证/修复）。
 - 可选 Graphify 集成：Leiden/Louvain 聚类、god-nodes 过滤、意外连接发现、社区命名、交互式 HTML 导出。
-- 控制台语言：English, 한국어, 中文。
+- 控制台语言：English, 中文。
 - 需安装配置 Claude CLI。模型选择：Opus/Sonnet/Haiku/Default。
 
 控制台要点：
 - 工具栏 5 类：工作（收录、问答、写作、比较）；分析（检查、反思、复习、引证）；浏览（搜索、图谱、历史）；创建（+文件夹、+页面）；更多（CLAUDE.md、指南）。
 - 侧栏：拖右缘 220–500px。Cmd/Ctrl+B 收起。在树中点击文件夹**名称**（非小箭头）进入连续阅读。
-- 标题栏：语言切换（English / 한국어 / 中文）、模型、Wiki Ratio、索引导航。
+- 标题栏：语言切换（English / 中文）、模型、Wiki Ratio、索引导航。
 - 左下状态栏：只显示事实。Claude CLI 与 Obsidian（进程 + vault 是否打开）。
 - 单页：编辑、Slides（Marp 导出）、删除。
 - 每次收录 = git 提交，可在历史中恢复。
@@ -4026,13 +3994,13 @@ import re as _re
 import json as _json
 
 _CHAT_ACTION_DESCRIPTIONS = {
-    "lint": "Check wiki citation health, formatting, orphaned pages, and overall quality. Triggered by 'lint', 'check health/quality', 'wiki 检查', 'lint 실행', etc.",
-    "lint_fix": "Auto-repair wiki lint issues. Triggered by 'fix lint', 'auto repair wiki', '修复 lint', 'lint 수정', etc.",
-    "reflect": "Analyze wiki patterns from recent ingests. Triggered by 'reflect', 'analyze patterns', '反思分析', '성찰 분석', etc.",
-    "validate_links": "Check for broken/dead wiki links. Triggered by 'broken links', 'validate links', '检查链接', '링크 검사', etc.",
-    "detect_sources": "Scan for raw sources not yet cited. Triggered by 'new sources', 'uncited files', '未收录源文件', '새로운 소스', etc.",
-    "loop": "Full wiki maintenance cycle (lint→fix→reflect). Triggered by 'wiki loop', 'maintenance', '执行循环', 'wiki 정비', '循环', etc.",
-    "schedule_help": "Set up periodic wiki tasks via cron. Triggered by 'schedule lint', 'daily wiki', '定时任务', '스케줄', etc.",
+    "lint": "Check wiki citation health, formatting, orphaned pages, and overall quality. Triggered by 'lint', 'check health/quality', 'wiki 检查', etc.",
+    "lint_fix": "Auto-repair wiki lint issues. Triggered by 'fix lint', 'auto repair wiki', '修复 lint', etc.",
+    "reflect": "Analyze wiki patterns from recent ingests. Triggered by 'reflect', 'analyze patterns', '反思分析', etc.",
+    "validate_links": "Check for broken/dead wiki links. Triggered by 'broken links', 'validate links', '检查链接', etc.",
+    "detect_sources": "Scan for raw sources not yet cited. Triggered by 'new sources', 'uncited files', '未收录源文件', etc.",
+    "loop": "Full wiki maintenance cycle (lint→fix→reflect). Triggered by 'wiki loop', 'maintenance', '执行循环', '循环', etc.",
+    "schedule_help": "Set up periodic wiki tasks via cron. Triggered by 'schedule lint', 'daily wiki', '定时任务', etc.",
 }
 
 _CHAT_ACTION_EXAMPLES = [
@@ -4043,7 +4011,7 @@ _CHAT_ACTION_EXAMPLES = [
     "看看有没有还没被引用的源文件",
     "run a reflect analysis on the last 5 ingests",
     "schedule a weekly link validation",
-    "wiki 정리 돌려줘",
+    
     "每天自动检查一次 wiki",
     "把所有缺失引用的源文件列出来",
 ]
@@ -4169,14 +4137,13 @@ def _regex_detect_chat_command(question: str) -> dict:
         r"清理循环|循环运行|跑一次循环|维护循环|完整.*维护|运行.*维护|完整维护|维护执行|循环": "loop",
         r"检查.*健康|体检.*wiki|质量检查|运行.*lint|检查.*引用": "lint",
         r"修复.*问题|自动修复|fix.*问题": "lint_fix",
-        r"模式分析|反思分析|运行.*反思|成察|성찰": "reflect",
-        r"链接.*检查|检查.*链接|死链|断链|无效链接|링크.*검사": "validate_links",
-        r"未收录|未引用|新.*源|源文件.*没|新的.*source|새.*소스|引用.*没|引用.*源|列出.*源|列出.*引用|有没有.*源": "detect_sources",
-        r"定时|每天|每周|周期|周期性|计划|스케줄": "schedule_help",
-        r"정리.*돌려|정비.*실행|정비.*돌려|wiki.*정비|wiki.*실행|wiki.*체크": "loop",
-        r"lint.*실행|lint.*해줘|lint.*돌려": "lint",
-        r"fix.*수정|수정.*자동": "lint_fix",
-        r"링크.*깨짐|깨진.*링크|링크.*체크": "validate_links",
+        r"模式分析|反思分析|运行.*反思|成察": "reflect",
+        r"链接.*检查|检查.*链接|死链|断链|无效链接": "validate_links",
+        r"未收录|未引用|新.*源|源文件.*没|新的.*source|引用.*没|引用.*源|列出.*源|列出.*引用|有没有.*源": "detect_sources",
+        r"定时|每天|每周|周期|周期性|计划": "schedule_help",
+        r"lint.*running|lint.*check|check.*lint": "lint",
+        r"fix.*auto|auto.*fix": "lint_fix",
+        r"link.*broken|broken.*link|validate.*link": "validate_links",
     }
     for pat, act in zh_ko_map.items():
         if _re.search(pat, q):
@@ -4316,8 +4283,8 @@ def _summarize_lint_result(result: dict) -> str:
 
 
 def do_assistant_chat(question, lang="en", history=None, project=None):
-    """대시보드 헬퍼 챗봇 — Claude CLI를 짧은 프롬프트로 호출.
-    project 매개변수가 있으면 해당 프로젝트의 wiki 컨텍스트를 포함.
+    """Dashboard helper chatbot — call Claude CLI with a short prompt.
+    If project parameter is present, includes wiki context for that project.
     Wiki action commands are detected first and executed directly."""
     import os
     if not question or not question.strip():
@@ -4389,19 +4356,19 @@ def do_assistant_chat(question, lang="en", history=None, project=None):
     else:
         tail = "Assistant (short, 2-4 sentences):"
     prompt = f"{ctx}\n\nConversation so far:{hist_text}\n\nUser: {question}\n\n{tail}"
-    # 도우미는 wiki/raw 파일을 읽지 않고 답변 생성만 — HTTP 또는 CLI
+    # assistant does not read wiki/raw files, only generates answers — HTTP or CLI
     ok, ans, err = run_claude(prompt, timeout=60, cwd=str(PROJECT_ROOT), project=None, force_cli=False)
     return {"ok": ok, "answer": (ans or "").strip()[:2000], "error": err[:300] if not ok else ""}
 
 
 # ─── Projects API (MP-03) ───
-# legacy 모드 유지하면서 projects.json 기반 멀티 프로젝트 기반을 도입.
-# 기존 do_*()는 현재 WIKI_DIR/RAW_DIR 상수를 그대로 사용 (MP-07에서 스코핑).
+# Maintain legacy mode while introducing projects.json-based multi-project foundation.
+# Existing do_*() still uses current WIKI_DIR/RAW_DIR constants (scoping in MP-07).
 
 def list_projects_api():
     projects = [p.to_dict() for p in project_registry.list_projects()]
     active_slug = project_registry.get_active_slug()
-    # legacy 정보도 노출
+    # also expose legacy info
     legacy = None
     if project_registry.LEGACY_WIKI.exists():
         try:
@@ -4452,7 +4419,7 @@ def switch_project_api(slug):
 
 
 def update_project_api(slug, **fields):
-    # None 값은 버림
+    # discard None values
     cleaned = {k: v for k, v in fields.items() if v is not None}
     try:
         p = project_registry.update_project_settings(slug, **cleaned)
@@ -4787,7 +4754,7 @@ class Handler(SimpleHTTPRequestHandler):
         q_project = (qs.get("project", [""])[0] or "").strip() or None
         qlang = (qs.get("lang", [""])[0] or "").strip()
         try:
-            # 미지 slug는 조기 404
+            # unknown slug -> early 404
             if q_project is not None:
                 try:
                     project_registry.get_project(q_project)
@@ -5119,13 +5086,13 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/schedules":
                 schedules = _sched_load()[0]
                 return self._json({"ok": True, "schedules": schedules})
-            # API 경로인데 매칭 안 됨
+            # API path but no match
             if path.startswith("/api/"):
                 return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
-            # 정적 파일
+            # static file
             super().do_GET()
         except BrokenPipeError:
-            # 클라이언트가 연결을 끊은 경우 — 조용히 무시
+            # client disconnected — silently ignore
             pass
         except Exception as e:
             import traceback
@@ -5153,7 +5120,7 @@ class Handler(SimpleHTTPRequestHandler):
             # Regular JSON body for other endpoints
             body = self._read_body()
 
-            # 전 엔드포인트에서 body.project 사용 (미지 slug면 get_project가 KeyError)
+            # all endpoints use body.project (unknown slug raises KeyError from get_project)
             p_slug = (body.get("project") or "").strip() or None
             if path == "/api/ingest":
                 return self._json(do_ingest(body.get("title", ""), body.get("content", ""), body.get("folder", ""), project_slug=p_slug))
@@ -5390,7 +5357,7 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)})
                 return self._json(_load_universe_config())
-            # 매칭 안 된 API 경로
+            # unmatched API path
             return self._json({"ok": False, "error": f"Unknown endpoint: {path}"}, code=404)
         except BrokenPipeError:
             pass
@@ -5448,7 +5415,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         except Exception as e:
-            # 직렬화 불가 시 최소한의 에러 응답
+            # minimal error response on serialization failure
             body = json.dumps({"ok": False, "error": f"serialization failed: {e}"}).encode("utf-8")
             code = 500
         try:

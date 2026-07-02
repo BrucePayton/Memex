@@ -88,7 +88,7 @@ from dashboard.models import (
     make_slug, is_system_page, SYSTEM_PAGES,
 )
 
-WORD_RE = re.compile(r"[\w가-힣]+")
+WORD_RE = re.compile(r"[\w]+")
 
 
 # parse_fm, extract_links now imported from dashboard.models above
@@ -1455,7 +1455,7 @@ def _detect_cross_project_bridges(all_nodes: list) -> list:
     title_map: dict[str, list] = defaultdict(list)
     for n in all_nodes:
         # Normalize: lowercase, strip common suffixes
-        key = re.sub(r'[^a-z가-힣0-9]+', '', n["label"].lower())
+        key = re.sub(r'[^a-z0-9]+', '', n["label"].lower())
         if len(key) > 4:
             title_map[key].append(n)
 
@@ -1633,7 +1633,7 @@ async def graph_search_universe(query: str, limit: int = 20, project: str = "") 
 
     results = []
     q_lower = query.lower()
-    q_words = re.findall(r'[\w가-힣]+', q_lower)
+    q_words = re.findall(r'[\w]+', q_lower)
 
     for n in nodes:
         score = 0.0

@@ -1,26 +1,31 @@
 # Wiki Template — Reading Log
 
-> 책·아티클 독서 기록용.
+> For tracking reading of books and articles.
 
-## 프로젝트 맥락
+## Topic
 
-- **주제**: 독서 로그
-- **목적**: 책·기사·뉴스레터 요약과 교차 참조
-- **주 언어**: ko
+{{TOPIC}}
 
-## 권장 wiki/ 구조
+## Purpose
 
-```
-wiki/
-  sources/        # 책·기사 요약 (source-summary)
-  authors/        # 저자 (entity)
-  ideas/          # 핵심 아이디어 (concept)
-  quotes/         # 인용구 모음
-  reviews/        # 서평 (analysis)
-```
+{{PURPOSE}}
 
-## 추가 Frontmatter 필드 (권장)
+## Behavior
 
-- `rating: 1~5` — reviews 페이지
-- `finished: YYYY-MM-DD` — sources 페이지
-- `genre: fiction | non-fiction | essay` 등
+- Create a source-summary page per book/article.
+- Extract key concepts and link to concept pages.
+- Track reading status: to-read, reading, completed.
+- Note cross-references between works.
+
+## Recommended wiki folders
+
+- `wiki/books/` — book summaries and notes
+- `wiki/articles/` — article summaries
+- `wiki/authors/` — author entity pages
+- `wiki/concepts/` — extracted concepts and themes
+
+## Key policies
+
+1. Always cite page numbers or chapter/section for specific claims.
+2. Distinguish author's claims from your own analysis.
+3. Link related works for comparative analysis.

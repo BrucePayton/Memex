@@ -1,48 +1,35 @@
 # Wiki Template (generic)
 
-> 이 파일은 신규 프로젝트 생성 시 `projects/<slug>/CLAUDE.md`로 복사되는 스타터 스키마입니다.
-> 프로젝트의 주제/도메인에 맞게 자유롭게 수정하세요. 루트 `CLAUDE.md`의 공통 규칙은 항상 유지됩니다.
+> This file is the starter schema copied to `projects/<slug>/CLAUDE.md` when creating a new project.
 
-## 프로젝트 맥락
+## Purpose
 
-- **주제**: {{TOPIC}}
-- **목적**: {{PURPOSE}}
-- **주 언어**: ko
+{{PURPOSE}}
 
-## 디렉터리 구조
+## Directory structure
 
 ```
-raw/              # IMMUTABLE 원본 소스 (수정/삭제 금지)
-wiki/             # LLM이 유지관리하는 페이지
-  sources/        # source-summary 타입
-  entities/       # 고유명사
-  concepts/       # 아이디어/프레임워크
-  techniques/     # 방법론/알고리즘
-  analyses/       # 복합 분석
-  index.md
-  log.md
-  overview.md
-ingest-reports/
-reflect-reports/
-plans/
+raw/              # IMMUTABLE source documents
+raw/assets/       # Downloaded images
+wiki/             # LLM-maintained wiki pages
+wiki/index.md     # Content catalog of all pages
+wiki/log.md       # Chronological activity record
+ingest-reports/   # WHY reports (auto-generated on ingest)
+.obsidian/        # Obsidian vault settings (do not modify)
 ```
 
-`wiki/` 하위 폴더는 권장 사항입니다. 엄격 적용 여부는 프로젝트 관리자가 결정.
+## Behavior
 
-## Frontmatter 규칙
+- Always add `[^src-{slug}]` inline citations to factual claims.
+- When sources contradict, apply the Contradiction Resolution policy.
+- Update `last_updated`, `source_count` in frontmatter on every page modification.
+- Record all actions in `wiki/log.md`.
+- Generate WHY reports in `ingest-reports/` after each ingest.
 
-루트 `CLAUDE.md`의 Frontmatter 규칙을 그대로 따릅니다. 프로젝트별 추가 필드가 필요하면 이 파일에 명시.
+## Key policies
 
-- (Optional) For graph labels in other UI languages, the dashboard may use `title_en` / `title_ko` / `title_zh` in addition to `title` (see root `CLAUDE.md` “Dashboard graph labels vs UI language”).
-
-## Ingest 워크플로
-
-루트 `CLAUDE.md`의 "Ingest 워크플로"를 따릅니다.
-
-## Lint 체크리스트
-
-루트 `CLAUDE.md`의 Lint 체크리스트를 따릅니다.
-
-## 프로젝트별 스타일 가이드
-
-(추가 규칙이 있으면 여기에 작성)
+1. **raw/ is immutable** — never modify files under any raw/ directory.
+2. **Citations required** — all factual claims must have inline `[^src-*]` citations.
+3. **Contradiction resolution** — when sources conflict, follow the resolution policy.
+4. **Git commits** — every change is committed with descriptive messages.
+5. **Cross-references** — link related pages liberally with `[[wikilinks]]`.

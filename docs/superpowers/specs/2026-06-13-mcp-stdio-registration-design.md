@@ -46,7 +46,7 @@ working with the Memex app closed.
 - No Streamable-HTTP transport, no app-hosted server, no port, no tunnel, no
   auth, no claude.ai web. No change to `memex_mcp.py` (stdio already works).
 - No forced auto-registration. Default is "show + copy the command"; running it
-  is one explicit optional button, not automatic (owner: "그냥 알려줘").
+  is one explicit optional button, not automatic (owner: "just tell me").
 - No bundling/packaging changes for an installed `.app` (see Limitations).
 
 ## Architecture

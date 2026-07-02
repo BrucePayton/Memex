@@ -1,9 +1,9 @@
-"""project_registry.py — 멀티 프로젝트 레지스트리/resolver.
+"""project_registry.py — Multi-Project Registry/resolver.
 
-- projects.json 읽기/쓰기
+- projects.json read/write
 - Project dataclass
-- legacy 모드 지원 (projects.json이 없거나 비어있으면 현재 루트의 wiki/raw를 default로 간주)
-- 모든 경로는 PROJECT_ROOT 기준 절대 경로로 변환
+- legacy mode support (if projects.json is missing or empty, current root wiki/raw is treated as default)
+- all paths converted to absolute paths relative to PROJECT_ROOT
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 
-# 모듈 로드 시 PROJECT_ROOT 고정
+# Pin PROJECT_ROOT at module load time
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_FILE = PROJECT_ROOT / "projects.json"
 PROJECTS_DIR = PROJECT_ROOT / "projects"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 
-# legacy 경로 (마이그레이션 전 현재 레이아웃)
+# legacy paths (current layout before migration)
 LEGACY_WIKI = PROJECT_ROOT / "wiki"
 LEGACY_RAW = PROJECT_ROOT / "raw"
 LEGACY_CLAUDE_MD = PROJECT_ROOT / "CLAUDE.md"
@@ -92,7 +92,7 @@ def _save_registry(reg: dict) -> None:
 
 from dashboard.models import make_slug
 
-# ─── 프로젝트 설정 파일 (model 등) ───
+# --- Project settings file (model etc.) ---
 
 def _load_project_settings(settings_path: Path) -> dict:
     if not settings_path.exists():
@@ -110,7 +110,7 @@ def _save_project_settings(settings_path: Path, settings: dict) -> None:
     )
 
 
-# ─── Project 인스턴스화 ───
+# --- Project instantiation ---
 
 def _legacy_project() -> Project:
     settings = _load_project_settings(LEGACY_SETTINGS)
@@ -135,7 +135,7 @@ def _entry_to_project(entry: dict) -> Project:
     slug = entry["slug"]
     root = PROJECTS_DIR / slug
     settings = _load_project_settings(root / ".settings.json")
-    # model 우선순위: .settings.json > registry entry > default
+    # model priority: .settings.json > registry entry > default
     model = settings.get("model") or entry.get("model") or "default"
     return Project(
         slug=slug,
@@ -159,7 +159,7 @@ def _entry_to_project(entry: dict) -> Project:
 
 
 def all_raw_dirs() -> list[Path]:
-    """모든 raw/ 경로 (legacy + 각 프로젝트). 쓰기 보호 판정에 사용."""
+    """All raw/ paths (legacy + each project). Used for write-protection checks."""
     out = [LEGACY_RAW]
     if PROJECTS_DIR.exists():
         for p in PROJECTS_DIR.iterdir():
@@ -169,7 +169,7 @@ def all_raw_dirs() -> list[Path]:
 
 
 def is_protected_raw(path: Path | str) -> bool:
-    """주어진 경로가 어떤 raw/ 안에 있으면 True (불변 보호 대상)."""
+    """True if given path is inside any raw/ (immutable protection target)."""
     s = str(Path(path).absolute())
     for r in all_raw_dirs():
         rs = str(r.absolute())
@@ -194,34 +194,34 @@ def has_projects() -> bool:
 
 
 def get_project(slug: str | None = None) -> Project:
-    """주어진 slug의 프로젝트. 없거나 projects.json이 비어있으면 legacy project 반환.
+    """Get project by slug. Returns legacy project if missing or projects.json is empty.
 
     Args:
-        slug: 구체적 프로젝트 slug. None이면 active 사용. legacy 폴백.
+        slug: specific project slug. If None, uses active. Falls back to legacy.
     """
     reg = _load_registry()
     projects = reg.get("projects", [])
     if not projects:
-        # projects.json 비어있음 → legacy
+        # projects.json empty -> legacy
         return _legacy_project()
 
     target = slug or reg.get("active")
     if not target:
-        # active 미지정인데 프로젝트는 있음 → 첫 항목으로 폴백
+        # active unspecified but projects exist -> fallback to first
         return _entry_to_project(projects[0])
 
     for e in projects:
         if e.get("slug") == target:
             return _entry_to_project(e)
 
-    # slug 불일치 → legacy 폴백 (조용히) 대신 예외
+    # slug mismatch -> exception instead of silent legacy fallback
     raise KeyError(f"Project not found: {target}")
 
 
 # ─── CRUD ───
 
-# 템플릿별 권장 wiki/ 하위 폴더. 프로젝트 생성 시 자동 스캐폴드.
-# 키는 templates/ 디렉터리명 및 "" (generic).
+# Recommended wiki/ sub-folders per template. Auto-scaffolded on Create project.
+# Keys are templates/ directory names and "" (generic).
 TEMPLATE_FOLDERS: dict[str, list[str]] = {
     "": ["sources", "entities", "concepts", "techniques", "analyses"],
     "llm-research": ["sources", "models", "techniques", "concepts", "entities", "benchmarks", "analyses"],
@@ -231,12 +231,12 @@ TEMPLATE_FOLDERS: dict[str, list[str]] = {
 
 
 def recommended_folders(template_name: str) -> list[str]:
-    """주어진 템플릿의 권장 폴더 목록."""
+    """Recommended folder list for the given template."""
     return TEMPLATE_FOLDERS.get(template_name or "", TEMPLATE_FOLDERS[""])
 
 
 def list_template_names() -> list[str]:
-    """`templates/` 바로 아래 디렉터리 중 CLAUDE.md를 가진 것만 허용."""
+    """Only directories directly under `templates/` that contain CLAUDE.md are allowed."""
     if not TEMPLATES_DIR.is_dir():
         return []
     out = []
@@ -249,12 +249,12 @@ def list_template_names() -> list[str]:
 
 
 def _copy_template(template_name: str, dest: Path) -> None:
-    """templates/<name>/CLAUDE.md를 dest/CLAUDE.md로 복사. 없으면 generic.
+    """templates/<name>/copy templates/<name>/CLAUDE.md to dest/CLAUDE.md. Falls back to generic if missing.
 
-    보안: template_name은 `list_template_names()`의 화이트리스트 + 슬래시/점 불허.
-    traversal 시도(`../foo`, `a/b` 등)는 generic 폴백으로 강등.
+    Security: template_name must be in `list_template_names()` whitelist + no slashes/dots.
+    traversal attempts (`../foo`, `a/b` etc.) are downgraded to generic fallback.
 
-    placeholder {{TOPIC}} {{PURPOSE}}는 create_project에서 replace.
+    placeholder {{TOPIC}} {{PURPOSE}} replaced in create_project.
     """
     generic = TEMPLATES_DIR / "CLAUDE.md"
 
@@ -266,7 +266,7 @@ def _copy_template(template_name: str, dest: Path) -> None:
         src_file = generic
     else:
         candidate = TEMPLATES_DIR / safe_name / "CLAUDE.md"
-        # resolve 후 TEMPLATES_DIR 아래인지 재확인 (심볼릭 링크 등 방어)
+        # re-verify under TEMPLATES_DIR after resolve (defense against symlinks etc.)
         try:
             resolved = candidate.resolve(strict=True)
             if not str(resolved).startswith(str(TEMPLATES_DIR.resolve()) + "/"):
@@ -277,14 +277,14 @@ def _copy_template(template_name: str, dest: Path) -> None:
             src_file = generic
 
     if not src_file.is_file():
-        # generic조차 없으면 최소 스텁
+        # if even generic is missing, minimal stub
         dest.write_text("# Wiki\n\n(no template available)\n", encoding="utf-8")
         return
     dest.write_text(src_file.read_text("utf-8"), encoding="utf-8")
 
 
-# server.py에서 주입하는 모델 검증 훅. 기본값은 통과(레거시 호환).
-# 반환 True면 허용, False면 거부.
+# model validation hook injected from server.py. Default passes (legacy compat).
+# Return True to allow, False to deny.
 _model_validator = lambda m: True  # noqa: E731
 
 
@@ -301,12 +301,12 @@ def create_project(
     model: str = "default",
     template: str = "",
 ) -> Project:
-    """신규 프로젝트 생성.
+    """Create new project.
 
-    - slug_hint → make_slug → 중복 체크
-    - model은 `set_model_validator`로 주입된 검증기 통과해야 함
-    - projects/<slug>/ 디렉터리 + 기본 파일 생성
-    - projects.json에 등록, active로 설정
+    - slug_hint -> make_slug -> duplicate check
+    - model must pass validator injected via `set_model_validator`
+    - create projects/<slug>/ directory + default files
+    - register in projects.json, set as active
     """
     if not title or not title.strip():
         raise ValueError("title is required")
@@ -332,12 +332,12 @@ def create_project(
     (root / "reflect-reports").mkdir()
     (root / "plans").mkdir()
 
-    # 템플릿 권장 폴더 스캐폴드. 화이트리스트에 없는 템플릿이면 generic fallback.
+    # template recommended folder scaffold. Falls back to generic if template not in whitelist.
     tmpl_key = template if template in list_template_names() else ""
     for folder in recommended_folders(tmpl_key):
         (root / "wiki" / folder).mkdir(exist_ok=True)
 
-    # 스타터 wiki 파일 (최소)
+    # starter wiki files (minimal)
     today = datetime.now().strftime("%Y-%m-%d")
     (root / "wiki" / "index.md").write_text(
         f"# {title} — Index\n\n## Sources\n\n## Entities\n\n## Concepts\n\n## Techniques\n\n## Analyses\n",
@@ -352,7 +352,7 @@ def create_project(
         encoding="utf-8",
     )
 
-    # CLAUDE.md 템플릿 복사
+    # copy CLAUDE.md template
     _copy_template(template or "", root / "CLAUDE.md")
     content = (root / "CLAUDE.md").read_text("utf-8")
     content = content.replace("{{TOPIC}}", title).replace("{{PURPOSE}}", description or "")
@@ -361,10 +361,10 @@ def create_project(
     # .settings.json
     _save_project_settings(root / ".settings.json", {"model": model})
 
-    # 빈 query-log
+    # empty query-log
     (root / "query-log.jsonl").write_text("", encoding="utf-8")
 
-    # 레지스트리 업데이트
+    # update registry
     entry = {
         "slug": slug,
         "title": title,
@@ -402,7 +402,7 @@ def update_project_settings(slug: str, *, model: str | None = None, title: str |
                 if not _model_validator(model):
                     raise ValueError(f"invalid model: {model!r}")
                 e["model"] = model
-                # .settings.json과 동기화
+                # sync with .settings.json
                 sf = PROJECTS_DIR / slug / ".settings.json"
                 s = _load_project_settings(sf)
                 s["model"] = model
@@ -417,8 +417,8 @@ def update_project_settings(slug: str, *, model: str | None = None, title: str |
 
 
 def delete_project(slug: str, confirm: bool = False) -> dict:
-    """프로젝트 삭제. 기본값은 projects/.trash/<slug>-<ts>/로 이동 (soft).
-    confirm=True여야만 실행. 'hard' 옵션은 이번 단계에서 미구현.
+    """Delete project. Default: move to projects/.trash/<slug>-<ts>/ (soft delete).
+    Runs only with confirm=True. 'hard' option not yet implemented.
     """
     if not confirm:
         return {"ok": False, "error": "confirm=True required"}
@@ -431,8 +431,8 @@ def delete_project(slug: str, confirm: bool = False) -> dict:
     src = PROJECTS_DIR / slug
     trash = PROJECTS_DIR / ".trash"
     trash.mkdir(exist_ok=True)
-    # ms + 충돌 시 counter. shutil.move는 dest가 존재하는 디렉터리면
-    # src를 그 안으로 넣어버리기 때문에 유일한 이름을 반드시 확보해야 함.
+    # ms + counter on collision. shutil.move, if dest is an existing directory,
+    # places src inside it, so a unique name must be ensured.
     ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     dest = trash / f"{slug}-{ts}"
     n = 0

@@ -25,9 +25,9 @@ class TestMakeSlug:
         result = make_slug("测试页面")
         assert "测试页面" in result
 
-    def test_korean_title(self):
-        result = make_slug("한글 페이지")
-        assert "한글" in result
+    def test_chinese_title(self):
+        result = make_slug("中文 页面")
+        assert "中文" in result
 
     def test_special_characters(self):
         assert make_slug("Hello! @World#") == "hello-world"

@@ -1,11 +1,11 @@
 """
-index_strategy.py — 페이지 수에 따라 인덱스 전략을 결정하고
-인덱스 파일을 자동 생성/갱신한다.
+index_strategy.py — determines index strategy based on page count and
+auto-generates/updates index files.
 
-전략:
-  flat         (< 50 pages)  — 단일 wiki/index.md
-  hierarchical (50~200)      — 타입별 서브 인덱스
-  indexed      (> 200)       — 서브 인덱스 + BM25 권장
+Strategies:
+  flat         (< 50 pages)  — single wiki/index.md
+  hierarchical (50~200)      — per-type sub-indexes
+  indexed      (> 200)       — sub-indexes + BM25 recommended
 """
 
 import re
@@ -16,7 +16,7 @@ from dashboard.models import FRONTMATTER_RE, SYSTEM_PAGES
 
 THRESHOLDS = {"flat": 50, "hierarchical": 200}
 
-# 타입 → 서브 인덱스 파일명 매핑
+# type -> sub-index filename mapping
 TYPE_INDEX = {
     "concept": "index-concepts.md",
     "technique": "index-techniques.md",
@@ -25,7 +25,7 @@ TYPE_INDEX = {
     "analysis": "index-analyses.md",
 }
 
-# 이 파일들은 일반 페이지 카운트에서 제외
+# these files are excluded from normal page counts
 SYSTEM_FILES = SYSTEM_PAGES | set(TYPE_INDEX.values())
 
 
@@ -49,7 +49,7 @@ def _parse_title(text: str, stem: str) -> str:
 
 
 def count_wiki_pages(wiki_dir: Path) -> int:
-    """시스템 파일 제외한 실제 위키 페이지 수"""
+    """Actual wiki page count excluding system files"""
     count = 0
     for md in wiki_dir.rglob("*.md"):
         if md.name not in SYSTEM_FILES:
@@ -58,7 +58,7 @@ def count_wiki_pages(wiki_dir: Path) -> int:
 
 
 def get_strategy(wiki_dir: Path) -> dict:
-    """현재 전략 + 메타 정보 반환"""
+    """Return current strategy + meta info"""
     n = count_wiki_pages(wiki_dir)
     if n < THRESHOLDS["flat"]:
         mode = "flat"
@@ -71,14 +71,14 @@ def get_strategy(wiki_dir: Path) -> dict:
     else:
         mode = "indexed"
         next_threshold = None
-        warning = "200+ 페이지 도달. qmd 또는 벡터 검색 도입을 권장합니다."
+        warning = "200+ pages reached. Consider introducing qmd or vector search."
 
-    # 임계값 접근 경고 (5 이내)
+    # threshold proximity warning (within 5)
     proximity_warning = None
     if mode == "flat" and next_threshold - n <= 5:
-        proximity_warning = f"flat → hierarchical 전환까지 {next_threshold - n}페이지"
+        proximity_warning = f"pages until flat -> hierarchical transition {next_threshold - n}pages"
     elif mode == "hierarchical" and next_threshold and next_threshold - n <= 10:
-        proximity_warning = f"indexed 전환까지 {next_threshold - n}페이지"
+        proximity_warning = f"pages until indexed transition {next_threshold - n}pages"
 
     return {
         "mode": mode,
@@ -90,7 +90,7 @@ def get_strategy(wiki_dir: Path) -> dict:
 
 
 def _collect_pages(wiki_dir: Path) -> dict[str, list[tuple[str, str]]]:
-    """타입별로 (filename, title) 리스트 수집"""
+    """Collect (filename, title) list per type"""
     by_type: dict[str, list[tuple[str, str]]] = {}
     for md in sorted(wiki_dir.rglob("*.md")):
         if md.name in SYSTEM_FILES:
@@ -109,12 +109,12 @@ def _one_line(title: str, filename: str) -> str:
 
 
 def build_flat_index(wiki_dir: Path):
-    """단일 index.md 생성 (< 50 pages)"""
+    """Generate single index.md (< 50 pages)"""
     by_type = _collect_pages(wiki_dir)
     today = datetime.now().strftime("%Y-%m-%d")
 
     sections = []
-    # overview 페이지
+    # overview pages
     if (wiki_dir / "overview.md").exists():
         sections.append("## Overview\n- [[overview]] — wiki scope and current state")
 
@@ -134,7 +134,7 @@ def build_flat_index(wiki_dir: Path):
             lines.append(_one_line(title, fn))
         sections.append("\n".join(lines))
 
-    # 미분류
+    # uncategorized
     known = {t for t, _ in type_order}
     for ptype, pages in sorted(by_type.items()):
         if ptype in known:
@@ -163,7 +163,7 @@ All wiki pages, organized by type. Updated on every ingest.
 
 
 def build_hierarchical_index(wiki_dir: Path):
-    """타입별 서브 인덱스 + 요약 index.md 생성 (50~200 pages)"""
+    """Generate per-type sub-indexes + summary index.md (50~200 pages)"""
     by_type = _collect_pages(wiki_dir)
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -183,7 +183,7 @@ def build_hierarchical_index(wiki_dir: Path):
         pages = by_type.get(ptype, [])
         count = len(pages)
 
-        # 서브 인덱스 생성
+        # generate sub-index
         lines = []
         for fn, title in sorted(pages, key=lambda x: x[1].lower()):
             lines.append(_one_line(title, fn))
@@ -204,13 +204,13 @@ tags:
 """
         (wiki_dir / idx_file).write_text(sub_content, "utf-8")
 
-        # 요약 index에 링크
+        # link in summary index
         idx_stem = idx_file.replace(".md", "")
         summary_sections.append(
             f"## {heading} ({count})\nSee [[{idx_stem}|full list]]"
         )
 
-    # 미분류
+    # uncategorized
     known = {t for t, _, _ in type_order}
     for ptype, pages in sorted(by_type.items()):
         if ptype in known:
@@ -240,19 +240,19 @@ tags:
 
 
 def rebuild_index(wiki_dir: Path) -> dict:
-    """현재 전략에 맞는 인덱스를 강제 재생성"""
+    """Force regeneration of index matching current strategy"""
     strategy = get_strategy(wiki_dir)
     mode = strategy["mode"]
 
     if mode == "flat":
         build_flat_index(wiki_dir)
-        # 서브 인덱스가 있으면 삭제
+        # delete sub-indexes if present
         for fn in TYPE_INDEX.values():
             f = wiki_dir / fn
             if f.exists():
                 f.unlink()
     else:
-        # hierarchical 또는 indexed
+        # hierarchical or indexed
         build_hierarchical_index(wiki_dir)
 
     return {"ok": True, "mode": mode, "page_count": strategy["page_count"]}

@@ -16,7 +16,7 @@
 - **Modify** `app/src-tauri/src/lib.rs` — declare `pub mod mcp_server;`, register 3 IPC handlers.
 - **Modify** `app/src-tauri/src/commands.rs` — 3 thin `#[tauri::command]` adapters.
 - **Modify** `app/src/lib/ipc.ts` — `McpRegInfo` type + 3 wrappers.
-- **Modify** `app/src/lib/i18n.ts` — MCP strings in `Strings` interface + en/ko/ja.
+- **Modify** `app/src/lib/i18n.ts` — MCP strings in `Strings` interface + en/ja.
 - **Modify** `app/src/pages/PageSettings.tsx` — add `"mcp"` tab + `SettingsMcp` component.
 
 ---
@@ -334,14 +334,14 @@ git commit -m "feat(memex): ipc wrappers for MCP registration"
 
 ---
 
-## Task 4: i18n strings (en / ko / ja)
+## Task 4: i18n strings (en / ja)
 
 **Files:**
-- Modify: `app/src/lib/i18n.ts` (Strings interface + 3 language objects)
+- Modify: `app/src/lib/i18n.ts` (Strings interface + 2 language objects)
 
 - [ ] **Step 1: Add keys to the `Strings` interface**
 
-In `app/src/lib/i18n.ts`, inside `export interface Strings { … }`, add (next to the other `s_*` tab labels):
+In `app/src/lib/i18n.ts`, inside `export interface Strings { ... }`, add (next to the other `s_*` tab labels):
 
 ```ts
   s_mcp: string;
@@ -371,7 +371,7 @@ In the `en` object (next to `s_about: "About",`), add:
     mcp_status_installed: "MCP server installed",
     mcp_status_not_installed: "MCP server not installed",
     mcp_install_btn: "Install MCP server",
-    mcp_installing: "Installing…",
+    mcp_installing: "Installing...",
     mcp_command_label: "Register with Claude Code",
     mcp_desktop_label: "Claude Desktop config",
     mcp_desktop_path:
@@ -385,32 +385,7 @@ In the `en` object (next to `s_about: "About",`), add:
       "Could not find mcp-server/ near this vault. Open the Memex repo as your vault.",
 ```
 
-- [ ] **Step 3: Add the Korean values**
-
-In the `ko` object (next to `s_about: "정보",`), add:
-
-```ts
-    s_mcp: "MCP 서버",
-    mcp_lede:
-      "이 vault를 Claude Code·Claude Desktop에 MCP 도구로 노출합니다. 아래 명령으로 한 번만 등록하면, 이 앱이 꺼져 있어도 모든 Claude 세션에서 동작합니다.",
-    mcp_status_installed: "MCP 서버 설치됨",
-    mcp_status_not_installed: "MCP 서버 미설치",
-    mcp_install_btn: "MCP 서버 설치",
-    mcp_installing: "설치 중…",
-    mcp_command_label: "Claude Code에 등록",
-    mcp_desktop_label: "Claude Desktop 설정",
-    mcp_desktop_path:
-      "~/Library/Application Support/Claude/claude_desktop_config.json 에 추가",
-    mcp_copy: "복사",
-    mcp_copied: "복사됨",
-    mcp_register_btn: "지금 Claude Code에 등록",
-    mcp_offline_note:
-      "Memex가 꺼져 있어도 동작 — Claude가 서버를 직접 띄웁니다.",
-    mcp_not_found:
-      "이 vault 근처에서 mcp-server/ 를 찾지 못했습니다. Memex 레포를 vault로 여세요.",
-```
-
-- [ ] **Step 4: Add the Japanese values**
+- [ ] **Step 3: Add the Japanese values**
 
 In the `ja` object (next to `s_about: "情報",`), add:
 
@@ -421,7 +396,7 @@ In the `ja` object (next to `s_about: "情報",`), add:
     mcp_status_installed: "MCP サーバー導入済み",
     mcp_status_not_installed: "MCP サーバー未導入",
     mcp_install_btn: "MCP サーバーを導入",
-    mcp_installing: "導入中…",
+    mcp_installing: "導入中...",
     mcp_command_label: "Claude Code に登録",
     mcp_desktop_label: "Claude Desktop 設定",
     mcp_desktop_path:
@@ -435,7 +410,7 @@ In the `ja` object (next to `s_about: "情報",`), add:
       "この vault 付近に mcp-server/ が見つかりません。Memex リポジトリを vault として開いてください。",
 ```
 
-- [ ] **Step 5: Verify types (every Strings key must exist in all 3 objects)**
+- [ ] **Step 4: Verify types (every Strings key must exist in all language objects)**
 
 Run: `cd app && npx tsc -b`
 Expected: `No errors found`. (A missing key in any language object is a TS error here.)

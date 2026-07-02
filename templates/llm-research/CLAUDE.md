@@ -1,32 +1,32 @@
 # Wiki Template — LLM Research
 
-> LLM/ML 연구 주제에 최적화된 스타터 스키마.
+> Starter schema optimized for LLM/ML research topics.
 
-## 프로젝트 맥락
+## Topic
 
-- **주제**: LLM / ML 연구
-- **목적**: 논문·블로그·구현 노트를 축적해 개념 그래프를 구축
-- **주 언어**: ko
+{{TOPIC}}
 
-## 권장 wiki/ 구조
+## Purpose
 
-```
-wiki/
-  sources/        # 논문·블로그 요약
-  models/         # 모델 (GPT-N, Llama, Claude 등)
-  techniques/     # 알고리즘 (RLHF, DPO, LoRA 등)
-  concepts/       # 아이디어 (scaling laws, attention 등)
-  entities/       # 연구자·조직·제품
-  benchmarks/     # 평가 세트
-  analyses/       # 종합 분석
-```
+{{PURPOSE}}
 
-## 추가 Frontmatter 필드 (권장)
+## Behavior
 
-- `paper_year: YYYY` — source-summary 타입에만
-- `venue: "NeurIPS 2024"` 등
-- `arxiv: "2401.xxxxx"` — 있으면
+- Focus on technical accuracy and citation rigor.
+- Prefer primary sources (papers, official docs) over secondary summaries.
+- Track model versions and benchmark results with date stamps.
+- Flag speculative claims and distinguish from established results.
+- Cross-reference related techniques, papers, and authors.
 
-## Citation 규칙
+## Recommended wiki folders
 
-루트 `CLAUDE.md`를 따릅니다. 논문 ingest 시 arxiv id가 있으면 source-summary에 명시.
+- `wiki/papers/` — paper summaries (type: source-summary)
+- `wiki/techniques/` — techniques and algorithms
+- `wiki/models/` — model cards and comparisons
+- `wiki/analyses/` — multi-source synthesis and trend analysis
+
+## Key policies
+
+1. Every claim about model performance must cite a specific benchmark source.
+2. Date-stamp all claims: "As of YYYY-MM, ..."
+3. When papers conflict on results, create `## Disputed` sections.

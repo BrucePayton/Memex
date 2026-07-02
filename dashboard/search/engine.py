@@ -250,7 +250,7 @@ def _tokenize(text: str) -> list[str]:
     # Korean/CJK: bigrams for contiguous Unicode blocks
     korean_run = []
     for ch in text:
-        if "가" <= ch <= "힯" or "一" <= ch <= "鿿":
+        if "一" <= ch <= "鿿":
             korean_run.append(ch)
         else:
             if len(korean_run) >= 2:

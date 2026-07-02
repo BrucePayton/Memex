@@ -113,23 +113,23 @@ def _count_claims(page_content: str) -> tuple[int, int]:
 
 
 def validate_page(page_path: Path, wiki_dir: Path) -> dict:
-    """페이지 검증:
-    - 모든 [^src-*] 참조에 정의가 있는지
-    - 정의된 source-summary 페이지가 존재하는지
-    - claim 중 citation 없는 비율
+    """Page validation:
+    - all [^src-*] references have definitions
+    - defined source-summary pages exist
+    - ratio of claims without citations
     """
     text = page_path.read_text("utf-8")
     refs = parse_citations(text)
     defs = _get_definitions(text)
     total_claims, cited_claims = _count_claims(text)
 
-    # 1. 참조인데 정의 없음
+    # 1. reference without definition
     undefined_refs = [slug for slug in refs if slug not in defs]
 
-    # 2. 정의된 source 페이지 존재 여부
+    # 2. whether defined source page exists
     missing_sources = []
     for slug, target in defs.items():
-        # target에서 wikilink 추출: [[source-xxx]] 또는 그냥 텍스트
+        # extract wikilink from target: [[source-xxx]] or plain text
         wl = re.search(r"\[\[([^\]]+)\]\]", target)
         source_filename = (wl.group(1) if wl else slug.replace("src-", "source-")) + ".md"
         if not (wiki_dir / source_filename).exists():
@@ -148,20 +148,20 @@ def validate_page(page_path: Path, wiki_dir: Path) -> dict:
 
 
 def build_provenance_graph(wiki_dir: Path) -> list[dict]:
-    """모든 wiki 페이지 검증 결과 리스트 반환"""
+    """Return validation results for all wiki pages"""
     results = []
     for md in sorted(wiki_dir.rglob("*.md")):
         rel = str(md.relative_to(wiki_dir))
-        # 메타 페이지는 스킵
+        # skip meta pages
         if is_system_page(rel):
             continue
         text = md.read_text("utf-8")
-        # source 타입 페이지는 그 자체가 출처이므로 스킵
+        # skip source-type pages as they are themselves sources
         if re.search(r"^type:\s*source", text, re.MULTILINE):
             continue
         v = validate_page(md, wiki_dir)
-        # claim이 0인 페이지도 포함 (overview 등)
+        # include pages with 0 claims (overview etc.)
         results.append(v)
-    # 커버리지 낮은 순 정렬
+    # sort by lowest coverage
     results.sort(key=lambda x: x["coverage"])
     return results
